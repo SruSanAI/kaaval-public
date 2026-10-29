@@ -325,13 +325,18 @@ def _dc_value(rest):
     return 0.0 if m or re.match(r"(?i)^\s*ac\b", rest) else None
 
 
+EDGE = 1e-9                        # rise / fall time of a digitally driven control
+
+
 def _ramped(circuit, ramp, vscale, supplies, schedule=None):
     """Every top-level independent source becomes `DC x PWL(0 0 ramp x)` with x its operating-point value: the
     operating point is unchanged, while a transient starts from an unpowered circuit (all sources 0 at t=0) and brings
     every source up together, as a chip does at power-on. Stimuli (pulse, sin, ac) are held at their DC value, so the
     circuit is left alone to settle. Supplies are scaled by vscale. `schedule` {source name (lower case): (start,
     ramp)} powers chosen sources in a sequence instead: held at 0 until `start`, then ramped over their own `ramp`
-    (a rail that comes up second or slowly, an enable or reset released after the rails)."""
+    (a rail that comes up second or slowly, an enable or reset released after the rails); or ("wave", [[t, level]])
+    drives a source with a digital waveform (levels 0 or 1 of its value, EDGE-long edges), e.g. an enable as the
+    project's own logic drives it."""
     schedule = schedule or {}
     sup = {s[0].lower() for s in supplies}
     out = []
@@ -354,11 +359,28 @@ def _ramped(circuit, ramp, vscale, supplies, schedule=None):
             if x is not None:
                 if p[0].lower() in sup:
                     x *= vscale
-                t0, rr = schedule.get(p[0].lower(), (0.0, ramp))
-                pts = f"0 0 {t0:.4g} 0 {t0 + rr:.4g} {x:.6g}" if t0 > 0 else f"0 0 {rr:.4g} {x:.6g}"
+                s = schedule.get(p[0].lower(), (0.0, ramp))
+                if s[0] == "wave":
+                    pts, lvl, last = ["0 0"], 0, 0.0
+                    for t, b in s[1]:
+                        if b != lvl:
+                            t = max(t, last + EDGE)        # PWL times must increase
+                            pts += [f"{t:.9g} {lvl * x:.6g}", f"{t + EDGE:.9g} {b * x:.6g}"]
+                            lvl, last = b, t + EDGE
+                    pts = " ".join(pts)
+                else:
+                    t0, rr = s
+                    pts = f"0 0 {t0:.4g} 0 {t0 + rr:.4g} {x:.6g}" if t0 > 0 else f"0 0 {rr:.4g} {x:.6g}"
                 line = f"{p[0]} {p[1]} {p[2]} DC {x:.6g} PWL({pts})"
         out.append(line)
     return "\n".join(out)
+
+
+def _sched_end(ramp, schedule):
+    """When the last scheduled source has settled: the hold of a sequenced power-up starts there."""
+    ends = [s[1][-1][0] + EDGE if s[0] == "wave" and s[1] else s[0] + s[1] for s in (schedule or {}).values()
+            if s[0] != "wave" or s[1]]
+    return max([ramp] + ends)
 
 
 def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None):
@@ -374,7 +396,7 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
     if not sup:
         return {t: (None, "no supply source found") for t in temps}
     circ = _ramped(tb.circuit, ramp, vscale, sup, schedule)
-    ramp = max([ramp] + [a + b for a, b in (schedule or {}).values()])
+    ramp = _sched_end(ramp, schedule)
     t2 = Testbench(sch=tb.sch, circuit=circ, analyses=tb.analyses,
                    params=[p for p in tb.params if not re.match(r"(?i)^\s*\.ic\b", p)], options=tb.options)
     nets = [n for n in output_nets(tb) if "[" not in n][:40]
@@ -634,7 +656,7 @@ def powerup_wave(tb, corner, temp, vscale=1.0, ramp=20e-6, settle=300e-6, nets=N
     sequences chosen sources, see _ramped)."""
     sup = tb.supplies()
     circ = _ramped(tb.circuit, ramp, vscale, sup, schedule)
-    ramp = max([ramp] + [a + b for a, b in (schedule or {}).values()])
+    ramp = _sched_end(ramp, schedule)
     t2 = Testbench(sch=tb.sch, circuit=circ, analyses=tb.analyses,
                    params=[p for p in tb.params if not re.match(r"(?i)^\s*\.ic\b", p)], options=tb.options)
     nets = [n for n in (nets or output_nets(tb)) if "[" not in n][:8]

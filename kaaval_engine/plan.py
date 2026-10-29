@@ -17,7 +17,9 @@ choose WHAT to test but cannot inject simulator commands.
     powers the cell up in every case of cases(): rails together or each rail first (the others 10 µs, 100 µs or 1 ms
     later), fast (2 µs) or slow (1 ms) ramps,
     controls rising with the rails or released after them; the cell must end in the same state in every case
-    (checks.sequence). Any plan may list "pads": [{"port"}]: that port drives the Tiny Tapeout pad path (PAD).
+    (checks.sequence). A control may carry "wave": [[t, 0|1], ...], its timing as the project's own logic drives it
+    (from a digital simulation, kaaval_engine.vcd), t in seconds after the rails are up: each rail order and speed
+    then also runs with every waved control following its wave. Any plan may list "pads": [{"port"}]: that port drives the Tiny Tapeout pad path (PAD).
 
     plan = {"cell": "xschem/core_prel.sch", "kind": "powerup",
             "supplies": {"VDD": 1.8}, "grounds": ["VSS"], "loads": [{"port": "Vbgr", "ohms": 1e7}],
@@ -28,7 +30,7 @@ choose WHAT to test but cannot inject simulator commands.
 """
 import os, re
 
-from kaaval_engine import checks, sim, spice_cells
+from kaaval_engine import checks, sim, spice_cells, vcd
 from kaaval_engine import netlist as N
 
 KINDS = {"powerup", "stability", "sequence"}
@@ -42,6 +44,7 @@ FAST, SLOW = 2e-6, 1e-3          # rail ramp times
 # regulators), so the gap is swept and a finding reports the smallest gap that fails and the largest that passes
 GAPS = [10e-6, 100e-6, 1e-3]
 LATE = 20e-6                      # enables / resets released LATE after the rails
+WAVE_MAX_T = 5e-3                 # a control's logic wave covers at most the first 5 ms after the rails
 SEQ_CORNERS, SEQ_TEMPS, SEQ_VSCALES = ["tt", "ss", "ff"], [-40, 27, 125], [1.0]
 
 
@@ -144,6 +147,14 @@ def validate(plan, root):
             err.append(f"control port {c.get('port')!r} is not a net of {plan['cell']}")
         if not isinstance(c.get("volts"), (int, float)) or not 0.0 <= c["volts"] <= 6.0:
             err.append(f"control {c.get('port')}={c.get('volts')!r} V is outside 0…6 V")
+        if "wave" in c:
+            w = c["wave"]
+            ok = isinstance(w, list) and 0 < len(w) <= vcd.MAX_EDGES and all(
+                isinstance(x, (list, tuple)) and len(x) == 2 and isinstance(x[0], (int, float)) and
+                0 <= x[0] <= WAVE_MAX_T and x[1] in (0, 1) for x in w)
+            if not ok or any(b[0] < a[0] for a, b in zip(w, w[1:])):
+                err.append(f"control {c.get('port')} wave must be 1-{vcd.MAX_EDGES} [t, 0|1] pairs in time order, "
+                           f"0 <= t <= {WAVE_MAX_T * 1e3:.0f} ms")
     for pd in plan.get("pads") or []:
         if str(pd.get("port", "")).lower() not in nets:
             err.append(f"pad port {pd.get('port')!r} is not a net of {plan['cell']}")
@@ -187,6 +198,7 @@ def cases(plan):
     order (None = together, else the rail that leads), speed, gap (s) and whether controls come late."""
     sup = [(f"vplan{i}", p) for i, p in enumerate(plan.get("supplies") or {})]
     ctl = [(f"vctl{i}", c["port"]) for i, c in enumerate(plan.get("controls") or [])]
+    waves = {f"vctl{i}": c["wave"] for i, c in enumerate(plan.get("controls") or []) if c.get("wave")}
     orders = [(None, 0.0)] + ([(p, g) for _, p in sup for g in GAPS] if len(sup) > 1 else [])
     src = dict((p, s) for s, p in sup)
     out = []
@@ -194,13 +206,16 @@ def cases(plan):
         for lead, gap in orders:
             sched = {s: ((0.0 if lead in (None, p) else rr + gap), rr) for s, p in sup}
             end = max(a + b for a, b in sched.values())
-            for late in ([False, True] if ctl else [False]):
+            for late in ([False, True] + (["logic"] if waves else []) if ctl else [False]):
                 sc = dict(sched)
                 for s, _ in ctl:
-                    sc[s] = (end + LATE, FAST) if late else (0.0, rr)
+                    sc[s] = (("wave", [[end + t, b] for t, b in waves[s]]) if late == "logic" and s in waves else
+                             (end + LATE, FAST) if late is True else (0.0, rr))
                 oname = "together" if lead is None else f"{lead} first, others {gap * 1e6:.0f} µs later"
+                how = ("as the project's logic drives them" if late == "logic" else
+                       "after the rails" if late else "with the rails")
                 name = f"rails {oname}, {speed} ({rr * 1e6:.0f} µs ramps)" + \
-                    (f", {'/'.join(p for _, p in ctl)} {'after' if late else 'with'} the rails" if ctl else "")
+                    (f", {'/'.join(p for _, p in ctl)} {how}" if ctl else "")
                 out.append((name, sc, dict(lead=lead, speed=speed, gap=gap, late=late)))
     assert not sup or all(src)
     return out

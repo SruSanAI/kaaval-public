@@ -311,8 +311,9 @@ def sequence(per, meta=None, vtol=0.1):
                 if diffs:
                     bad.append((name, c, "other state", max(diffs, key=lambda x: abs(x[1] - x[2])), r, r0))
     if bad:
-        def weight(x):
-            return 2.0 if x[2] == "dead" else 1.5 if x[2] == "oscillates" else abs(x[3][1] - x[3][2])
+        def weight(x):              # worst state first; among equals, the case timed by the project's own logic
+            w = 2.0 if x[2] == "dead" else 1.5 if x[2] == "oscillates" else abs(x[3][1] - x[3][2])
+            return (w, (meta.get(x[0]) or {}).get("late") == "logic")
         name, c, s, d, r, r0 = max(bad, key=weight)
         n = sum(1 for sw in per.values() for r_, e_ in sw.values() if r_ and not e_)
         cases_bad = list(dict.fromkeys(x[0] for x in bad))
@@ -335,6 +336,8 @@ def sequence(per, meta=None, vtol=0.1):
                         message=f"The block comes up differently depending on how the chip powers up: with {name} it "
                                 f"{what} (at {c[0]}, {c[1]} °C, supply ×{c[2]}), while with every rail together and "
                                 f"fast it comes up working. {len(bad)} of {n} power-ups differ, in "
-                                f"{len(cases_bad)} sequence(s): {'; '.join(cases_bad[:4])}.{gaps} On a real chip the rails, "
+                                f"{len(cases_bad)} sequence(s): {'; '.join(cases_bad[:4])}.{gaps}" +
+                                (" The enable and reset timing of that case comes from the project's own digital "
+                                 "simulation." if m and m.get("late") == "logic" else "") + " On a real chip the rails, "
                                 f"enables and resets arrive in an order and at a speed the block does not choose."))
     return out

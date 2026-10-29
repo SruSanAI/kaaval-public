@@ -5,7 +5,7 @@
 2. Our own sky130 two-stage Miller op-amp in unity feedback: phase margin must fall as the load grows and rise with a
    bigger compensation capacitor, and the check must flag the thin-margin case and pass the well-compensated one.
 3. A break on a pin that is not on the net is refused."""
-import os, subprocess, sys, tempfile
+import os, re, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kaaval_engine import checks, sim
 
@@ -66,6 +66,23 @@ def test_opamp_margin_trends_and_findings():
     assert [f["rule"] for f in checks.stability({("tt", 27, 1.0): (thin, None)})] == ["analog/low_phase_margin"]
     assert checks.stability({("tt", 27, 1.0): (good, None)}) == []
 
+
+
+def overshoot(cl, cc):
+    """Overshoot of our op-amp as a unity follower for a 0.2 V input step (tt, 27 °C)."""
+    c = opamp(cl, cc).replace("Vp inp 0 0.9", "Vp inp 0 PULSE(0.8 1.0 1u 1n 1n 10u 20u)")
+    ctl = ("tran 1n 6u\nmeas tran vmax max v(out) from=1u to=6u\nmeas tran vfin avg v(out) from=5u to=6u\n"
+           "meas tran vlo avg v(out) from=0.5u to=1u")
+    out, err = sim.run(sim.deck(sim.Testbench(sch="own.sch", circuit=c, analyses=[".op"]), "tt", 27, 1.0, control=ctl),
+                       timeout=120)
+    v = {k: float(re.search(k + r"\s*=\s*(\S+)", out).group(1)) for k in ("vmax", "vfin", "vlo")}
+    return (v["vmax"] - v["vfin"]) / (v["vfin"] - v["vlo"])
+
+
+def test_step_overshoot_follows_phase_margin():
+    """The README's numbers: 0 % / 17 % / 38 % at phase margin 82° / 44° / 21°."""
+    good, mid, thin = overshoot("2p", "2p"), overshoot("2p", "0.5p"), overshoot("10p", "0.5p")
+    assert good < 0.01 and 0.12 < mid < 0.22 and 0.33 < thin < 0.43, (good, mid, thin)
 
 def test_break_pin_must_be_on_the_net():
     try:

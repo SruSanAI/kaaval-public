@@ -49,6 +49,9 @@ designer's own testbenches.
               in another state than with every rail together. Use it for cells with more than one supply domain, an
               enable or reset, or a start-up circuit; at most 128 power-ups (cases x conditions), so name few
               conditions, e.g. corners tt ss ff at 27 °C.
+   domains    for a cell with supplies at different voltages (1.8 V and 3.3 V): every transistor's voltages are solved
+              with all rails on and with each rail off while the others are up, and judged against the device's
+              rating (1.8 V thin-oxide devices against 3.3 V nodes: a missing level shifter or thick-oxide device).
    A plan names the cell, its supply ports and voltages, its ground ports, DC biases on input ports, controls
    (enable / reset ports and their active voltage; sequence only), loads on ports (ohms or farads), pads (ports that
    leave the chip through a Tiny Tapeout analog pad: the engine adds the pad path, 500 ohm, 5 pF and the board's
@@ -83,7 +86,7 @@ SCHEMA = {
                              "cut", "corners", "temps", "vscales", "why"],
                 "properties": {
                     "cell": {"type": "string"},
-                    "kind": {"type": "string", "enum": ["powerup", "stability", "sequence"]},
+                    "kind": {"type": "string", "enum": ["powerup", "stability", "sequence", "domains"]},
                     "controls": {"type": "array", "items": {
                         "type": "object", "additionalProperties": False, "required": ["port", "volts"],
                         "properties": {"port": {"type": "string"}, "volts": {"type": "number"}}}},
@@ -251,10 +254,30 @@ GND = re.compile(r"(?i)^(v?ss\w*|v?gnd\w*|agnd|dgnd)$")
 CTL = re.compile(r"(?i)^(ena?|enable\w*|en_\w+|\w*_en|rst\w*|reset\w*|pd|pwr_?dn|pdn)$")
 
 
+THICK = re.compile(r"(?i)g5v0d10v5|g5v0d16v0|_05v0|sky130_fd_sc_hvl")
+
+
+def rail_volts(port, netlist):
+    """A guess at a supply port's voltage without a model: 3.3 V when a thick-oxide (5 V-rated) device or a 3.3 V
+    (hvl) standard cell has its source, bulk or power pin on it, or its name says so (VAPWR, 3v3); 1.8 V otherwise.
+    Returns (volts, evidence)."""
+    p = port.lower()
+    for line in (netlist or "").splitlines():
+        w = line.split()
+        if len(w) > 5 and w[0][0] in "xXmM" and THICK.search(line):
+            nets = [x.lower() for x in w[1:] if "=" not in x]
+            if p in (nets[2:4] if "fet" in line.lower() else nets[:-1]):
+                return 3.3, f"{w[0]} is a thick-oxide / 3.3 V device on {port}"
+    if re.search(r"(?i)vapwr|3v3", port):
+        return 3.3, f"the name {port}"
+    return 1.8, f"no 3.3 V device on {port}"
+
+
 def _rules(ws, log, max_cells=20):
     """The no-model baseline: every cell whose pins name a supply and a ground is powered up at all 45 conditions.
     3.3 V for pins named like the analog 3.3 V rail, 1.8 V otherwise. Cells with two supply voltages or pins named
-    like an enable / reset also get a sequence test (rail order and speed)."""
+    like an enable / reset also get a sequence test (rail order and speed); cells with supplies at two voltages also
+    get the cross-domain overstress test."""
     done = []
     # one test per circuit: the same cell often exists as a schematic plus xschem-written and layout-extracted
     # netlists; prefer the schematic, then a plain netlist, then an extracted one (parasitic copies last)
@@ -270,9 +293,11 @@ def _rules(ws, log, max_cells=20):
         gnd = [p for p in c["ports"] if GND.match(p)]
         if not sup or not gnd:
             continue
-        ep = dict(cell=c["cell"], kind="powerup",
-                  supplies={p: 3.3 if re.search(r"(?i)vapwr|3v3", p) else 1.8 for p in sup}, grounds=gnd, loads=[],
-                  corners=CORNERS, temps=[-40, 27, 125], vscales=[0.9, 1.0], why="every cell, every condition")
+        volts = {p: rail_volts(p, c.get("netlist")) for p in sup}
+        guess = "; ".join(f"{p} {v:g} V ({why})" for p, (v, why) in volts.items())
+        ep = dict(cell=c["cell"], kind="powerup", supplies={p: v for p, (v, _) in volts.items()}, grounds=gnd,
+                  loads=[], corners=CORNERS, temps=[-40, 27, 125], vscales=[0.9, 1.0],
+                  why="every cell, every condition; rail voltages guessed: " + guess)
         plans = [ep]
         # chip context, by name only: a cell with two supply pins, or pins named like an enable or reset, is also
         # powered up in every rail order and speed (controls driven to the 1.8 V rail, active high)
@@ -282,6 +307,10 @@ def _rules(ws, log, max_cells=20):
                               controls=[{"port": p, "volts": 1.8} for p in ctl[:2]],
                               corners=["tt", "ss", "ff"], temps=[27], vscales=[1.0],
                               why="every rail order, by pin names"))
+        if len(set(ep["supplies"].values())) > 1:
+            plans.append(dict(cell=c["cell"], kind="domains", supplies=ep["supplies"], grounds=gnd, loads=[],
+                              corners=["tt", "ss", "ff"], temps=[-40, 27, 125], vscales=[1.0, 1.1],
+                              why="1.8 V devices next to a 3.3 V rail; rail voltages guessed: " + guess))
         for ep in plans:
             log("plan", f"rules: {ep['kind']} {c['cell']}", plan=ep)
             try:

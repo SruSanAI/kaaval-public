@@ -197,6 +197,60 @@ def op_points_corner(tb, corner, conds, timeout=600):
     return res
 
 
+def device_models(circuit):
+    """{device path as op_points names it ("x1.xmn"): model name}, resolved through the subcircuit hierarchy of a
+    flat netlist (ngspice's `show` truncates model names, so they are read from the text)."""
+    subs, top, cur = {}, [], None
+    for line in circuit.splitlines():
+        p = line.split()
+        if not p or p[0][0] in "*+":
+            continue
+        low = p[0].lower()
+        if low == ".subckt":
+            cur = subs.setdefault(p[1].lower(), [])
+        elif low == ".ends":
+            cur = None
+        elif low[0] == "x":
+            name = next((w for w in reversed(p[1:]) if "=" not in w), "")
+            (top if cur is None else cur).append((low, name.lower()))
+    out = {}
+
+    def walk(elems, prefix, depth):
+        for el, name in elems:
+            path = f"{prefix}.{el}" if prefix else el
+            if name in subs and depth < 30:
+                walk(subs[name], path, depth + 1)
+            elif name.startswith("sky130_fd_pr__"):
+                out[path] = name
+    walk(top, "", 0)
+    return out
+
+
+def op_states(tb, corner, temps, states, timeout=600):
+    """{(state name, temp): (ops, err)} in ONE ngspice session: every MOSFET's operating point with the sources set
+    as each state says. A state is (name, {source name lower: volts}); sources it does not name keep their value
+    (e.g. ("vdpwr off", {"vplan1": 0.0}): the chip with one rail not yet up)."""
+    base = {name.lower(): val for name, _, val in tb.supplies()}
+    lines, keys = [], []
+    for sname, set_ in states:
+        for t in temps:
+            lines.append(f"option temp={t}")
+            for src, val in dict(base, **set_).items():
+                lines.append(f"alter {src} dc={val:.6g}")
+            lines.append(f"op\necho KAAVAL_COND {len(keys)}\n{SHOW}")
+            keys.append((sname, t))
+    out, err = run(deck(tb, corner, 27, 1.0, control="\n".join(lines)), timeout=timeout)
+    if err:
+        return {k: (None, err) for k in keys}
+    chunks = re.split(r"^KAAVAL_COND (\d+)\s*$", out, flags=re.M)
+    got = {int(chunks[i]): chunks[i + 1] for i in range(1, len(chunks) - 1, 2)}
+    res = {}
+    for i, k in enumerate(keys):
+        d = parse_show(got[i]) if i in got else None
+        res[k] = ({short(n): v for n, v in d.items()}, None) if d else (None, "no operating point (did not converge)")
+    return res
+
+
 # ---------------------------------------------------------------- switching circuits: the designer's own transient
 SI = {"f": 1e-15, "p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "meg": 1e6, "g": 1e9}
 

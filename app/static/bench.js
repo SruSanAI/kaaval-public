@@ -179,6 +179,7 @@
         : fs.filter(f => /^analog\/(unstable|low_phase_margin)/.test(f.rule)).length],
       [ICON.bias, 'Chip power-up sequence, by Muse Spark', lv && lv.stages && lv.stages.muse && lv.stages.muse.state === 'skipped' ? 'n/a'
         : fs.filter(f => f.rule === 'analog/sequence_dependent').length],
+      [ICON.region, 'Cross-domain overstress (1.8 V devices, 3.3 V nodes)', fs.filter(f => f.rule === 'analog/overstress').length],
       [ICON.fix, 'Fixes sized by Minnal', null]];
     $('#fams').innerHTML = rows.map(([ic, l, c]) => `<div class="famrow${c && c !== 'n/a' ? ' has' : ''}"${c === 'n/a' ? ` title="${esc(lv.kind_reason || '')}"` : ''}>${ic}<span>${l}</span>` +
       (c == null ? '<span class="soon">next</span>' : c === 'n/a' ? '<span class="soon">n/a</span>' : `<span class="c num">${c}</span>`) + '</div>').join('');
@@ -215,7 +216,8 @@
     const PLAIN = {'analog/no_startup': 'This circuit can wake up dead.', 'analog/two_states': 'This circuit can wake up in the wrong state.',
       'analog/oscillates': 'This circuit never settles: it oscillates.', 'analog/unstable': 'This loop is unstable.',
       'analog/low_phase_margin': 'This loop rings: its margins are thin.',
-      'analog/sequence_dependent': 'This circuit works only if the chip powers up in the right order.'};
+      'analog/sequence_dependent': 'This circuit works only if the chip powers up in the right order.',
+      'analog/overstress': 'A 1.8 V transistor sees a 3.3 V voltage: it will wear out or break.'};
     const plain = PLAIN[f.rule] ? `<div class="plain">${PLAIN[f.rule]}</div>` : '';
     const st = (f.detail && f.detail.states) || [];
     const states = f.rule === 'analog/two_states' && st.length === 2 ? `<div class="states num">${st.map((x, i) =>

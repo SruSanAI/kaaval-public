@@ -17,7 +17,11 @@ choose WHAT to test but cannot inject simulator commands.
     powers the cell up in every case of cases(): rails together or each rail first (the others 10 µs, 100 µs or 1 ms
     later), fast (2 µs) or slow (1 ms) ramps,
     controls rising with the rails or released after them; the cell must end in the same state in every case
-    (checks.sequence). A control may carry "wave": [[t, 0|1], ...], its timing as the project's own logic drives it
+    (checks.sequence).
+    domains plan: a powerup plan whose cell has several supplies. Every MOSFET's operating point is solved with all rails
+    on and with each rail off while the others are up (the chip part-way through power-up), and each device's voltages
+    are judged against its sky130 rating (checks.overstress): a 1.8 V device reached by a 3.3 V node.
+    A control may carry "wave": [[t, 0|1], ...], its timing as the project's own logic drives it
     (from a digital simulation, kaaval_engine.vcd), t in seconds after the rails are up: each rail order and speed
     then also runs with every waved control following its wave. Any plan may list "pads": [{"port"}]: that port drives the Tiny Tapeout pad path (PAD).
 
@@ -33,7 +37,7 @@ import os, re
 from kaaval_engine import checks, sim, spice_cells, vcd
 from kaaval_engine import netlist as N
 
-KINDS = {"powerup", "stability", "sequence"}
+KINDS = {"powerup", "stability", "sequence", "domains"}
 MAX_CONDS = 45
 MAX_RUNS = 128                    # sequence tests: cases x conditions, each one power-up transient
 # the Tiny Tapeout analog pad path (tinytapeout.com/specs/analog): under 500 ohm and 5 pF from the macro pin to the pad
@@ -277,6 +281,23 @@ def run(plan, root, on_result=None):
                      ("dc_gain_db", "ugf", "pm", "gm_db", "pcf", "positive_dc", "f", "mag", "phase")}))
                 for (c, t, v), (r, e) in sw.items()]
         return dict(ok=True, findings=checks.stability(sw), results=rows, bench=bench)
+    if plan["kind"] == "domains":
+        sup = list(plan["supplies"].items())
+        per = {}
+        for v in vscales:
+            on = {f"vplan{i}": val * v for i, (_, val) in enumerate(sup)}
+            states = [(f"all rails on (supply x{v:g})", on)] + \
+                [(f"{p} off, {', '.join(q for q, _ in sup if q != p)} on (supply x{v:g})", dict(on, **{f"vplan{i}": 0.0}))
+                 for i, (p, _) in enumerate(sup)] * (len(sup) > 1)
+            for c in corners:
+                for (st, t), r in sim.op_states(tb, c, temps, states, timeout=300).items():
+                    per[(st, c, t)] = r
+                    if on_result:
+                        on_result((st, c, t), *r)
+        models = sim.device_models(tb.circuit + "\n" + sim.stdcells.defs_for(tb.circuit))
+        rows = [dict(state=st, corner=c, temp=t, error=e) for (st, c, t), (r, e) in per.items()]
+        return dict(ok=True, findings=checks.overstress(per, models), results=rows, bench=bench,
+                    devices=len([m for m in models.values() if checks.rating(m)]))
     if plan["kind"] == "sequence":
         per = {}
         meta = {}

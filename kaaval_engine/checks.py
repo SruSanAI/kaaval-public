@@ -341,3 +341,54 @@ def sequence(per, meta=None, vtol=0.1):
                                  "simulation." if m and m.get("late") == "logic" else "") + " On a real chip the rails, "
                                 f"enables and resets arrive in an order and at a speed the block does not choose."))
     return out
+
+
+# sky130 MOSFET voltage ratings by model family (nominal gate-source / drain-source, V); a device counts as
+# overstressed above OVER x its rating. Models not listed here are never judged.
+RATINGS = [("g5v0d10v5", 5.0, 10.0), ("g5v0d16v0", 5.0, 16.0), ("05v0", 5.0, 5.0), ("01v8", 1.8, 1.8)]
+OVER = 1.1
+
+
+def rating(model):
+    m = (model or "").lower()
+    return next(((g, d) for key, g, d in RATINGS if key in m), None)
+
+
+def overstress(per, models):
+    """Cross-domain overstress: a device sees more than OVER x its rated voltage between its terminals.
+
+    per: {(state, corner, temp): (ops, err)} from sim.op_states, states like "all rails on" or "vdpwr off"; models:
+    {device: model} (sim.device_models). On a chip with 1.8 V and 3.3 V rails, a 1.8 V (thin-oxide) device that
+    ends up between a 3.3 V node and ground - a missing level shifter, a 3.3 V signal on a 1.8 V gate, or one rail
+    still off while the other is up - is overstressed. |Vgs|, |Vds| and |Vgd| are judged; bulk is not.
+      overstress   the worst device, the state and condition where it happens, and every device that exceeds"""
+    hits = {}
+    n = 0
+    for (st, c, t), (ops, e) in per.items():
+        if e or not ops:
+            continue
+        n += 1
+        for dev, d in ops.items():
+            r = rating(models.get(dev))
+            if not r or not all(isinstance(d.get(k), float) for k in ("vgs", "vds")):
+                continue
+            vgs, vds = d["vgs"], d["vds"]
+            worst = max((abs(vgs) / r[0], "gate-source", abs(vgs)), (abs(vds) / r[1], "drain-source", abs(vds)),
+                        (abs(vgs - vds) / r[0], "gate-drain", abs(vgs - vds)))
+            if worst[0] > OVER:
+                hits.setdefault(dev, []).append((worst, st, c, t))
+    if not hits:
+        return []
+    ranked = sorted(hits.items(), key=lambda kv: -max(h[0][0] for h in kv[1]))
+    dev, hs = ranked[0]
+    (ratio, where, v), st, c, t = max(hs, key=lambda h: h[0][0])
+    g, dsr = rating(models[dev])
+    states = sorted({h[1] for _, hh in ranked for h in hh})
+    rated = g if where != "drain-source" else dsr
+    return [dict(rule="analog/overstress", severity="warn", device=dev, worst=(st, c, t), n_bad=len(hits), n=n,
+                 devices=[d for d, _ in ranked], states=states, volts=v, rated=rated,
+                 message=f"{dev} ({models[dev]}, rated {rated:g} V) sees {v:.2f} V {where} with {st} (at {c}, {t} \u00b0C)"
+                         f", {ratio:.1f}x its rating. {len(hits)} device(s) exceed {OVER:g}x their rating, in: "
+                         f"{', '.join(states)}. A higher-voltage node reaches a lower-voltage device: a level shifter "
+                         f"or a thick-oxide device is missing on that path, or the block is not safe while one rail is "
+                         f"still off.")]

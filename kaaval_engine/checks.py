@@ -172,9 +172,14 @@ def startup(ssweep, vtol=0.1):
       two states   every node has settled, nothing swings, and some node sits more than `vtol` from the DC answer.
                    A settled circuit under constant sources is itself a DC solution, so the circuit has two operating
                    points and can come up in either; both are reported with their supply currents.
+      marginal     the power-up lands in different states depending on the simulator's time step (sim.startup_checked
+                   found no two steps that agree): nothing pushes the circuit firmly into its working state, so on
+                   silicon the state it reaches depends on noise and on how the supply rises.
     A node still drifting at the end proves nothing and is not reported."""
-    osc, two, dead = [], [], []
+    osc, two, dead, marg = [], [], [], []
     for c, (r, e) in ssweep.items():
+        if e and str(e).startswith("undetermined"):
+            marg.append((c, e))
         if e or not r:
             continue
         # the supply current settled near zero while the DC analysis reports a working bias: the circuit stays off.
@@ -201,7 +206,7 @@ def startup(ssweep, vtol=0.1):
         out.append(dict(rule="analog/no_startup", severity="warn", device="supply", worst=c, n_bad=len(dead), n=n,
                         conds=[list(x[0]) for x in dead], states=[dict(i=r["i_op"]), dict(i=r["i_end"])],
                         message=f"Powered up from 0 V, the circuit stays off at {len(dead)}/{n} conditions: the "
-                                f"supply current settles at {r['i_end'] * 1e9:.2f} nA while its DC analysis reports a "
+                                f"supply current settles at {_amps(r['i_end'])} while its DC analysis reports a "
                                 f"working bias of {r['i_op'] * 1e6:.1f} µA (worst {c[0]}, {c[1]} °C, supply ×{c[2]}; "
                                 f"ramp {r['ramp'] * 1e6:.0f} µs, held {r['settle'] * 1e6:.0f} µs). The zero-current "
                                 f"state is a valid solution and nothing pushes the circuit out of it: it needs a "
@@ -224,7 +229,20 @@ def startup(ssweep, vtol=0.1):
                                 f"after a power-up from 0 V, both settled. A reference or bias block must have one "
                                 f"state, so a start-up circuit has to rule the other out; a latch, comparator with "
                                 f"hysteresis or flip-flop is meant to have two."))
+    if marg:
+        c, e = marg[0]
+        out.append(dict(rule="analog/marginal_startup", severity="warn", device="supply", worst=c, n_bad=len(marg),
+                        n=n + len(marg), conds=[list(x[0]) for x in marg],
+                        message=f"At {len(marg)} condition(s) the power-up from 0 V lands in a different state each time "
+                                f"the simulator's time step is refined (at {c[0]}, {c[1]} °C, supply ×{c[2]}: "
+                                f"{e.split('(', 1)[-1].rstrip(')')}). Nothing pushes the circuit firmly into its working "
+                                f"state: on silicon, where it ends up depends on noise and on how the supply rises. A "
+                                f"start-up circuit that acts until the block is fully on removes the doubt."))
     return out
+
+
+def _amps(i):
+    return f"{i * 1e9:.2f} nA" if abs(i) < 1e-6 else f"{i * 1e6:.1f} µA"
 
 
 # ---------------------------------------------------------------- stability

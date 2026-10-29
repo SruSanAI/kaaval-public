@@ -49,6 +49,18 @@ def test_inverter_at_trip_point_is_not_a_second_state():
     assert rules == [], rules
 
 
+
+def test_step_ladder_agreement_and_marginal_finding():
+    """Results agree only within 5 % current and 20 mV per node; a condition no two steps agree on is reported as a
+    marginal start-up, not dropped."""
+    a = dict(i_end=1e-5, nodes={"x": (1.0, 0.50)})
+    assert sim._same(a, dict(i_end=1.02e-5, nodes={"x": (1.0, 0.51)}))
+    assert not sim._same(a, dict(i_end=2e-5, nodes={"x": (1.0, 0.50)}))
+    assert not sim._same(a, dict(i_end=1e-5, nodes={"x": (1.0, 0.60)}))
+    f = checks.startup({("ff", 27, 1.0): (None, "undetermined: the power-up result changes with the simulator's "
+                                                 "time step (47.9 µA at 80 ns, 83.3 µA at 2 ns, 81.4 µA at 1 ns)")})
+    assert [x["rule"] for x in f] == ["analog/marginal_startup"] and "83.3 µA at 2 ns" in f[0]["message"]
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

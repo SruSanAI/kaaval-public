@@ -322,7 +322,7 @@ def run(plan, root, on_result=None):
             sw = {}
             for c in corners:
                 for v in vscales:
-                    for t, r in sim.startup_corner(tb, c, temps, v, ramp=FAST, settle=300e-6, timeout=300,
+                    for t, r in sim.startup_checked(tb, c, temps, v, ramp=FAST, settle=300e-6, timeout=300,
                                                    schedule=sched).items():
                         sw[(c, t, v)] = r
                         if on_result:
@@ -335,7 +335,7 @@ def run(plan, root, on_result=None):
     sw = {}
     for c in corners:
         for v in vscales:
-            for t, r in sim.startup_corner(tb, c, temps, v, ramp=20e-6, settle=300e-6, timeout=150).items():
+            for t, r in sim.startup_checked(tb, c, temps, v, ramp=20e-6, settle=300e-6, timeout=150).items():
                 sw[(c, t, v)] = r
                 if on_result:
                     on_result((c, t, v), *r)

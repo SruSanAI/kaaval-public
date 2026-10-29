@@ -467,7 +467,56 @@ def _sched_end(ramp, schedule):
     return max([ramp] + ends)
 
 
-def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None):
+STEPS = (None, 20000, 2e-9, 1e-9)       # time-step ladder: default, stop/20000, then absolute maximum steps
+
+
+def _same(a, b, vtol=0.02, itol=0.05):
+    """Two power-up results agree: settled supply current within itol (or 0.1 uA) and every node within vtol."""
+    if not a or not b:
+        return False
+    if abs(a["i_end"] - b["i_end"]) > max(itol * max(abs(a["i_end"]), abs(b["i_end"])), 1e-7):
+        return False
+    return all(abs(a["nodes"][n][1] - b["nodes"][n][1]) <= vtol for n in a["nodes"]
+               if n in b["nodes"] and a["nodes"][n][1] is not None and b["nodes"][n][1] is not None)
+
+
+def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None):
+    """startup_corner, with every result confirmed against a finer time step. A power-up from 0 V can land in different
+    states depending on the integrator's step (a circuit with several states and nothing choosing between them); a
+    result counts only when two successive steps of the ladder STEPS agree, and records the step (r["tmax"]). When no
+    two agree the condition reports an error naming the values seen: undetermined, never a pass or a fail."""
+    stop = _sched_end(ramp, schedule) + settle
+    seen = {t: [] for t in temps}
+    final = {}
+    todo = list(temps)
+    for level in STEPS:
+        if not todo:
+            break
+        tmax = None if level is None else (stop / level if level > 1 else level)
+        res = startup_corner(tb, corner, todo, vscale, ramp, settle, timeout * (1 if level is None else 4), schedule,
+                             tmax=tmax)
+        nxt = []
+        for t in todo:
+            r, e = res.get(t, (None, "did not complete"))
+            prev = seen[t][-1] if seen[t] else None
+            seen[t].append((r, e, tmax))
+            if prev and not prev[1] and not e and _same(prev[0], r):
+                final[t] = (dict(r, tmax=tmax or stop / 4000, step_check="agrees with a coarser step"), None)
+            else:
+                nxt.append(t)
+        todo = nxt
+    for t in todo:
+        vals = ", ".join(("error" if e else f"{r['i_end'] * 1e6:.3g} \u00b5A") + f" at {fmt_step(tm or stop / 4000)}"
+                         for r, e, tm in seen[t])
+        final[t] = (None, f"undetermined: the power-up result changes with the simulator's time step ({vals})")
+    return final
+
+
+def fmt_step(s):
+    return f"{s * 1e9:.3g} ns"
+
+
+def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, tmax=None):
     """{temp: (result, err)} for one corner and supply scale, in ONE ngspice session.
 
     At each temperature: the operating point (the state the designer's .op reports), then a transient from an unpowered
@@ -511,7 +560,7 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
             lines.append(f"print {v}")
         # no `uic`: the transient's own starting point is the operating point with every source at its t=0 value (0),
         # a consistent unpowered circuit; `uic` would start from an inconsistent state and can settle anywhere
-        lines.append(f"tran {stop / 4000:.4g} {stop:.4g}")
+        lines.append(f"tran {stop / 4000:.4g} {stop:.4g}" + (f" 0 {tmax:.4g}" if tmax else ""))
         lines.append(f"echo KAAVAL_TR {i}")
         lines.append(f"wrdata {tmp}/end{i}.txt all")
         for k, v in enumerate(isup + [f"v({n})" for n in nets]):
@@ -734,7 +783,8 @@ def health():
     return dict(ngspice=ver, pdk="sky130" if os.path.exists(PDK_LIB) else None, ok=bool(ver and os.path.exists(PDK_LIB)))
 
 
-def powerup_wave(tb, corner, temp, vscale=1.0, ramp=20e-6, settle=300e-6, nets=None, points=400, schedule=None):
+def powerup_wave(tb, corner, temp, vscale=1.0, ramp=20e-6, settle=300e-6, nets=None, points=400, schedule=None,
+                 tmax=2e-9):
     """One power-up from 0 V at one condition: time series of the total source current and the cell's named nodes,
     for the bench's waveform view. Same deck as startup_corner (all sources ramp, stimuli held at DC; `schedule`
     sequences chosen sources, see _ramped)."""
@@ -748,7 +798,8 @@ def powerup_wave(tb, corner, temp, vscale=1.0, ramp=20e-6, settle=300e-6, nets=N
     stop = ramp + settle
     tmp = tempfile.mkdtemp()
     vecs = " ".join([f"{s}#branch" for s in srcs] + [f"v({n})" for n in nets])
-    ctl = (f"set wr_vecnames\nset wr_singlescale\noption temp={temp}\ntran {stop / 4000:.4g} {stop:.4g}\n"
+    ctl = (f"set wr_vecnames\nset wr_singlescale\noption temp={temp}\noption method=gear\n"
+           f"tran {stop / 4000:.4g} {stop:.4g}" + (f" 0 {tmax:.4g}" if tmax else "") + "\n"
            f"linearize {vecs}\nwrdata {tmp}/w.txt {vecs}")
     out, err = run(deck(t2, corner, 27, 1.0, control=ctl), timeout=300)
     p = os.path.join(tmp, "w.txt")

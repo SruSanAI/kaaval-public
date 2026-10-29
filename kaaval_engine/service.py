@@ -268,7 +268,7 @@ def startup():
     vs = float(d.get("vscale", 1.0))
     temps = [int(t) for t in d.get("temps") or checks.SU_TEMPS]
     with _SEM:
-        res = sim.startup_corner(_testbench(d, p)[0], d["corner"], temps, vs, ramp=20e-6, settle=200e-6)
+        res = sim.startup_checked(_testbench(d, p)[0], d["corner"], temps, vs, ramp=20e-6, settle=200e-6)
     with _LOCK:
         sw = _SUSWEEPS.setdefault((root, p), {})
         for t, r in res.items():

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Kaaval — the senior reviewer for your analog chip</title>
+<title>Kaaval — the analog block, reviewed in its chip</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/kaaval.css">
@@ -20,7 +20,7 @@
 
 <nav class="r-nav">
   <a class="r-logo" href="/" aria-label="Kaaval home"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="var(--accent)"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="1.6"/></svg>Kaaval</a>
-  <div class="r-links"><a href="#s1">Read</a><a href="#s2">Plan</a><a href="#s3">Prove</a><a href="#s4">Fix</a></div>
+  <div class="r-links"><a href="#s1">Read</a><a href="#s2">Plan</a><a href="#s3">Prove</a><a href="#s4">In the chip</a><a href="#s5">Fix</a></div>
   <span class="r-status mono" id="minnal"><span class="d"></span>Minnal</span>
   <button class="r-theme" id="theme" type="button" aria-label="Switch light or dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg></button>
 </nav>
@@ -28,9 +28,10 @@
 <header class="r-hero">
   <div class="r-copy">
     <p class="r-kick mono">[ AI design review · open-silicon analog ]</p>
-    <h1 class="r-h1">The senior reviewer<br>your analog chip<br>never had.</h1>
-    <p class="r-lead">Kaaval reads your design, plans the tests a senior engineer would run, and proves every finding by
-      simulation at five process corners, three temperatures and three supplies, before the fab does it for you.</p>
+    <h1 class="r-h1">The analog block, reviewed in the chip it lives on.</h1>
+    <p class="r-lead">Analog blocks get simulated alone, every supply on at once. Chips don't power up that way.
+      Kaaval labels every pin's job and powers each block up the way the chip will: rails in every order and speed,
+      enables released by your logic, the output on its pad. Every finding is proven by simulation.</p>
     <form class="r-ask" id="ask" autocomplete="off">
       <div class="drop" id="drop"><label class="drop-inner">
         <span class="sr">Repository link or owner/repo</span>
@@ -58,19 +59,20 @@
   </section>
 
   <section class="r-sec" id="s2">
-    <div class="r-sh"><span class="mono">S.02</span><h2>Plan</h2><p>Muse Spark reads the whole design, names each block and its risks, and writes the tests the designer never ran. A plan is data: the engine checks every cell, port and value before anything is simulated.</p></div>
+    <div class="r-sh"><span class="mono">S.02</span><h2>Plan</h2><p>Muse Spark reads the whole design, names each block, labels the job of every pin with its evidence, and writes the tests the designer never ran: corners, loops, and the chip's power-up sequences. A plan is data: the engine checks every cell, port and value before anything is simulated.</p></div>
     <div class="r-plan">
-      <pre class="mono"><b>{</b>
-  "cell":     "ref.sch",
-  "kind":     "powerup",
-  "supplies": {"VDD": 1.8},
-  "grounds":  ["VSS"],
-  "corners":  ["tt","ss","ff","sf","fs"],
-  "temps":    [-40, 27, 125],
-  "vscales":  [0.9, 1.0, 1.1],
-  "why":      "self-biased loop, no start-up path"
-<b>}</b></pre>
-      <ul class="r-checks mono"><li><i>✓</i>cell exists in the repository</li><li><i>✓</i>VDD, VSS are nets of ref.sch</li><li><i>✓</i>1.8 V inside 0.3–6 V</li><li><i>✓</i>45 conditions ≤ 45</li><li><i>✓</i>kind is a known test</li><li class="x"><i>✕</i>raw SPICE from the planner: never accepted</li></ul>
+      <pre class="mono"><span class="cm">// the pin roles a plan starts from (Kaaval's test circuit)</span>
+<b>"ports"</b>: [
+  ["vdd",  "supply",     "PMOS sources and bulks, 1.8 V devices"],
+  ["avdd", "supply",     "3.3 V rail; reaches n1 only through Ckick"],
+  ["vss",  "ground",     "NMOS sources and R1"],
+  ["iout", "analog_out", "mirror output, leaves the macro"]]
+<span class="cm">// …and the test it plans from them</span>
+<b>{</b> "cell": "ref.spice#bref2", "kind": "sequence",
+  "supplies": {"vdd": 1.8, "avdd": 3.3}, "grounds": ["vss"],
+  "pads": [{"port": "iout"}],
+  "why": "start-up kick comes from another rail" <b>}</b></pre>
+      <ul class="r-checks mono"><li><i>✓</i>cell exists in the repository</li><li><i>✓</i>vdd, avdd, vss, iout are nets of bref2</li><li><i>✓</i>1.8 V and 3.3 V inside 0.3–6 V</li><li><i>✓</i>14 sequences × 3 corners = 42 ≤ 128 power-ups</li><li><i>✓</i>kind is a known test</li><li class="x"><i>✕</i>raw SPICE from the planner: never accepted</li></ul>
     </div>
   </section>
 
@@ -86,7 +88,26 @@
   </section>
 
   <section class="r-sec" id="s4">
-    <div class="r-sh"><span class="mono">S.04</span><h2>Fix</h2><p>A proposal, never a merge. Every fix is re-simulated at all 45 conditions before it is shown, and you decide whether it goes into your design.</p></div>
+    <div class="r-sh"><span class="mono">S.04</span><h2>In the chip</h2><p>On a chip the 3.3 V and 1.8 V rails come up in some order, at some speed, and the logic decides when an enable or reset lets go. The block must come up the same way every time. Kaaval powers it up in every order, sweeps the gap between the rails, and names where it starts failing, never one chosen number.</p></div>
+    <div class="r-chip">
+      <div class="r-tabs mono" role="tablist" aria-label="Scenario">
+        <button role="tab" aria-selected="true" data-s="rails">the 3.3 V rail comes first</button>
+        <button role="tab" aria-selected="false" data-s="logic">the logic holds power-down</button>
+      </div>
+      <div class="r-chip-body">
+        <div class="r-seq" id="seq" aria-label="Every power-up sequence against every corner"></div>
+        <div class="r-chip-side">
+          <svg class="r-tl" id="tl" viewBox="0 0 420 190" role="img" aria-label="Timeline of the selected power-up"></svg>
+          <p class="r-tl-cap mono" id="tl-cap"></p>
+          <div class="r-verdict" id="verdict"></div>
+        </div>
+      </div>
+      <p class="mono r-small">Kaaval's own test circuits (tests/test_kaaval_sequence.py, tests/test_kaaval_logic.py) · ngspice · sky130 · tt / ss / ff, 27 °C · the TT pad path on the output</p>
+    </div>
+  </section>
+
+  <section class="r-sec" id="s5">
+    <div class="r-sh"><span class="mono">S.05</span><h2>Fix</h2><p>A proposal, never a merge. Every fix is re-simulated at all 45 conditions before it is shown, and you decide whether it goes into your design.</p></div>
     <div class="r-fix">
       <pre class="r-diff mono"><span class="h">ref.sch · proposed</span>
 <span class="a">+ XM6 n1 0 VDD VDD sky130_fd_pr__pfet_01v8 L=20 W=0.42</span>
@@ -103,9 +124,10 @@
     <div><b class="v" data-to="160">0</b><span class="mono">open-silicon analog designs read as text</span></div>
     <div><b class="v" data-to="117.262" data-dec="1" data-suffix="°">0</b><span class="mono">phase margin, equal to the exact answer on our test loop</span></div>
     <div><b class="v" data-to="45">0</b><span class="mono">conditions behind every finding</span></div>
+    <div><b class="v" data-to="14">0</b><span class="mono">power-up sequences for a two-rail block: each rail first, 10 µs / 100 µs / 1 ms gaps, fast and slow</span></div>
   </section>
 
-  <section class="r-sec recent" id="recent" hidden><div class="r-sh"><span class="mono">S.05</span><h2>Your reviews</h2></div><div class="list" id="runs"></div></section>
+  <section class="r-sec recent" id="recent" hidden><div class="r-sh"><span class="mono">S.06</span><h2>Your reviews</h2></div><div class="list" id="runs"></div></section>
 
   <footer class="r-foot mono"><span>Kaaval · srusan</span><span>Pre-silicon simulation on open PDKs. One measured run, not a guarantee. Not foundry sign-off.</span><span>ngspice · sky130 · Muse Spark</span></footer>
 </main>

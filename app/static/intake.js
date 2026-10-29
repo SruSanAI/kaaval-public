@@ -15,7 +15,8 @@
 
   // ---------- boot: the engine's real steps, once per visit ----------
   const STEPS = ['load sky130 models · 5 corners', 'netlist schematics as text', 'check units against silicon',
-    'find testbenches and cells', 'plan tests · Muse Spark', 'power up from 0 V', 'cut loops · measure margin', 'start the review'];
+    'find testbenches and cells', 'label pin roles · Muse Spark', 'plan tests · Muse Spark', 'power up from 0 V',
+    'every rail order and speed', 'cut loops · measure margin', 'start the review'];
   const boot = $('#boot');
   let booted = false; try { booted = sessionStorage.getItem('kv-boot') === '1' } catch (e) {}
   if (reduce || booted) boot.remove();
@@ -60,7 +61,7 @@
       Powered up from 0 V it stays at <b>0.000 µA at ${H.dead}/45 conditions</b>, every −40 °C and 27 °C one, while its DC analysis
       reports ${H.ex.i_op.toFixed(2)} µA.<small>ss · −40 °C · supply ×0.9 · held 300 µs · confirmed steady</small>`},
     {x: 92, y: 150, r: 46, tag: 'p', label: '2', html: () => `<b>Proposal:</b> a weak always-on PMOS into n1 kicks the loop out of the 0 A
-      state. Re-simulated: <b>0/45 dead</b>.<small>S.04 · a proposal, never a merge</small>`},
+      state. Re-simulated: <b>0/45 dead</b>.<small>S.05 · a proposal, never a merge</small>`},
     {x: 490, y: 240, r: 60, tag: 'n', label: '3', html: () => `<b>Output, once running:</b> ${H.lo.toFixed(1)}–${H.hi.toFixed(1)} µA across the
       45 conditions with the start-up device.<small>supply current of V_DD, settled</small>`},
     {x: 250, y: 60, r: 44, tag: 'n', label: '4', html: () => `<b>The ${45 - H.dead} that start</b> are all at 125 °C, carried by leakage alone:
@@ -148,6 +149,72 @@
       $('#s3').scrollIntoView({behavior: reduce ? 'auto' : 'smooth', block: 'center'});
     };
   };
+
+  // ---------- S.04: the block in its chip (static/chip.json, real runs of our own circuits) ----------
+  const CORNERS = ['tt', 'ss', 'ff'];
+  const us = t => t >= 1e-3 ? `${+(t * 1e3).toFixed(2)} ms` : `${+(t * 1e6).toFixed(1)} µs`;
+  const label = (r, sc) => {
+    const m = r.meta, o = m.lead == null ? 'rails together' : `${m.lead} first, +${us(m.gap)}`;
+    const c = !sc.controls.length ? '' : m.late === 'logic' ? ` · ${sc.controls.join('/')} by the logic` :
+      m.late ? ` · ${sc.controls.join('/')} +20 µs` : ` · ${sc.controls.join('/')} with rails`;
+    return `${o}<span>${m.speed === 'fast' ? '2 µs ramps' : '1 ms ramps'}${c}</span>`;
+  };
+  const chip = j => {
+    const seq = $('#seq'), tl = $('#tl');
+    let sc = null, sel = 0;
+    const lanes = () => [...Object.entries(sc.supplies).map(([p, v], i) => [`vplan${i}`, `${p} ${v} V`]),
+      ...sc.controls.map((p, i) => [`vctl${i}`, p])];
+    const draw = () => {
+      const r = sc.rows[sel], L = lanes(), W = 420, X0 = 78, X1 = W - 8, top = 12, lh = Math.min(44, 150 / L.length);
+      const T = Math.max(...sc.rows.map(q => Math.max(...Object.values(q.schedule).map(s => s[0] === 'wave' ? s[1][s[1].length - 1][0] : s[0] + s[1])))) * 1.08;
+      const x = t => X0 + (X1 - X0) * Math.sqrt(Math.max(0, t) / T);      // square-root time: 10 µs and 2 ms both visible
+      let g = '';
+      [0, 10e-6, 100e-6, 1e-3, 2e-3].filter(t => t <= T).forEach(t => {
+        g += `<line class="gr" x1="${x(t)}" x2="${x(t)}" y1="${top - 4}" y2="${top + lh * L.length}"/>` +
+          (t ? `<text class="ax" x="${x(t)}" y="${top + lh * L.length + 14}" text-anchor="middle">${us(t)}</text>` : '');
+      });
+      L.forEach(([k, name], i) => {
+        const s = r.schedule[k], y0 = top + lh * (i + 1) - 8, y1 = top + lh * i + 8;
+        let pts = [[0, 0]];
+        if (s[0] === 'wave') { let lv = 0; s[1].forEach(([t, b]) => { if (b !== lv) { pts.push([t, lv], [t, b]); lv = b } }) }
+        else pts.push([s[0], 0], [s[0] + s[1], 1]);
+        pts.push([T, pts[pts.length - 1][1]]);
+        const d = pts.map(([t, v], n) => `${n ? 'L' : 'M'}${x(t).toFixed(1)} ${(v ? y1 : y0).toFixed(1)}`).join('');
+        g += `<text class="ln" x="0" y="${(y0 + y1) / 2 + 3}">${esc(name)}</text><path class="${k.startsWith('vctl') ? 'ctl' : 'rail'}" d="${d}"/>`;
+      });
+      tl.setAttribute('viewBox', `0 0 ${W} ${top + lh * L.length + 22}`); tl.innerHTML = g;
+      const bad = CORNERS.filter(c => ['dead', 'oscillates'].includes((r.cells[c] || {}).state));
+      $('#tl-cap').innerHTML = bad.length ? `<b class="bad">stays off</b> at ${bad.join(', ')} · ` +
+        `${(Math.min(...bad.map(c => r.cells[c].i_end)) * 1e9).toFixed(2)} nA` : `<b>comes up</b> at tt, ss, ff · ` +
+        `${(r.cells.tt.i_end * 1e6).toFixed(1)} µA`;
+      seq.querySelectorAll('.row').forEach((e, i) => e.classList.toggle('sel', i === sel));
+    };
+    const show = key => {
+      sc = j[key]; sel = 0;
+      seq.innerHTML = `<div class="hd"><span></span>${CORNERS.map(c => `<span>${c}</span>`).join('')}</div>` + sc.rows.map((r, i) =>
+        `<button class="row" type="button" data-i="${i}"><span class="nm">${label(r, sc)}</span>${CORNERS.map(c => {
+          const st = (r.cells[c] || {}).state; return `<i class="${st === 'dead' || st === 'oscillates' ? 'bad' : st === 'settled' ? 'ok' : ''}" title="${c}: ${st || 'did not run'}"></i>` }).join('')}</button>`).join('');
+      seq.querySelectorAll('.row').forEach(e => e.onclick = () => { sel = +e.dataset.i; draw() });
+      const release = () => {      // when the logic lets go, counted from the end of the rail ramps (from the VCD)
+        const lr = sc.rows.find(r => r.meta.late === 'logic'); if (!lr) return 0;
+        const end = Math.max(...Object.entries(lr.schedule).filter(([k]) => k.startsWith('vplan')).map(([, v]) => v[0] + v[1]));
+        return (lr.schedule.vctl0[1].find(p => p[1] === 1) || [end])[0] - end;
+      };
+      const f = sc.findings.find(f => f.rule === 'analog/sequence_dependent'), q = f && f.sequence;
+      const nbad = sc.rows.filter(r => CORNERS.some(c => (r.cells[c] || {}).state === 'dead')).length;
+      $('#verdict').innerHTML = !f ? '' : q && q.lead ?
+        `<div class="big">${us(q.fail_gap)}</div><p><b>${esc(q.lead)} first by ${us(q.fail_gap)} or more: the block stays off.</b> At ${us(q.pass_gap)} it starts. With every rail together the plain power-up check passes, so nothing else catches this.</p>` :
+        `<div class="big">${nbad}<small>/${sc.rows.length}</small></div><p><b>sequences where it stays off.</b> Released with the rails it starts; our logic releases ${esc(sc.controls.join('/'))} ${us(release())} after the rails (its VCD), when the start-up kick is long gone.</p>`;
+      // first failing row selected, so the timeline opens on the finding
+      const fails = r => CORNERS.some(c => (r.cells[c] || {}).state === 'dead');
+      const fl = sc.rows.findIndex(r => r.meta.late === 'logic' && fails(r)), fi = fl >= 0 ? fl : sc.rows.findIndex(fails);
+      sel = fi < 0 ? 0 : fi; draw();
+    };
+    document.querySelectorAll('.r-tabs button').forEach(b => b.onclick = () => {
+      document.querySelectorAll('.r-tabs button').forEach(x => x.setAttribute('aria-selected', x === b)); show(b.dataset.s) });
+    show('rails');
+  };
+  fetch('/static/chip.json').then(r => r.json()).then(chip);
 
   // ---------- intake field ----------
   const src = $('#src'), und = $('#und'), go = $('#go');

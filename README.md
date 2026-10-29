@@ -50,6 +50,13 @@ conditions where it fails, a **sequence matrix** (every power-up order against e
 waveform), the **power-up waveform** of any condition (simulated on click), and the **Bode plot** of a
 loop at every condition.
 
+## Kaaval Zoom: the whole chip, down to each transistor
+
+A review's **Chip view** draws the project's whole Tiny Tapeout tile from its top module and `info.yaml`, read as text:
+the 1.8 V and 3.3 V rails, the analog pads `ua[0..5]` (paid ones marked), the digital pads, and every block with each
+pin wired to what it reaches. Digital blocks and analog blocks are told apart; click an analog block to open its
+schematic, its pins and every test Kaaval ran on it with what it found; click a pin to trace its wire.
+
 ## Silicon Twin: from what the chip did back to why
 
 A bring-up report says what the fabricated chip showed at one node. `tools/silicon_twin.py` rebuilds the block in its
@@ -88,7 +95,7 @@ Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval
 | `KAAVAL_REVIEWS_PER_HOUR`, `KAAVAL_MAX_WAITING` | per-visitor limit (default 4/hour) and queue cap (default 6) |
 
 Tests (they simulate): `python tests/test_local_engine.py`, `tests/test_kaaval_startup.py`,
-`tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_liberty.py`, `tests/test_kaaval_stdcells.py`,
+`tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_liberty.py`, `tests/test_kaaval_chip.py`, `tests/test_kaaval_stdcells.py`,
 `tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`.
 
 ## What runs where

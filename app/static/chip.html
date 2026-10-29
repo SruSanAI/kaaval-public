@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Chip · Kaaval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/kaaval.css">
+<link rel="stylesheet" href="/static/chip.css">
+<script>try{const t=localStorage.getItem('kv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="top">
+  <a class="mark k-mark" href="/" aria-label="Kaaval home">Kaaval<i></i></a>
+  <nav class="crumbs" aria-label="zoom level"><a id="c-run" href="#">review</a><span class="sep">/</span><b id="c-top">chip</b><span class="sep">/</span><span class="mono" id="c-sel">pick a block</span></nav>
+  <div class="sp"></div>
+  <button class="btn icon" id="theme" type="button" aria-label="Switch light or dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.25a5.75 5.75 0 0 1 0 11.5z" fill="currentColor"/></svg></button>
+</header>
+<main class="zoom">
+  <section class="z-tile" aria-label="The whole tile">
+    <div class="z-h mono"><span>TILE</span><span id="z-meta"></span></div>
+    <svg id="tile" role="img" aria-label="The project's tile: rails, pads and blocks, wired as in its top module"></svg>
+    <p class="z-legend mono"><i class="k a"></i>analog block (opens its schematic) <i class="k d"></i>digital block <i class="k r"></i>a block with a finding · read from src/*.v and info.yaml as text, never run</p>
+  </section>
+  <aside class="z-insp" aria-label="Selected block">
+    <div class="z-h mono"><span id="i-kind">BLOCK</span><span id="i-cell"></span></div>
+    <div class="z-body" id="insp"><p class="z-empty">Click a block on the tile to open it: its pins and where each goes, the schematic, and every test Kaaval ran on it with what it found.</p></div>
+  </aside>
+</main>
+<script src="/static/chip.js"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import hmac, os, re, tempfile, threading, time, uuid
 from flask import Flask, abort, jsonify, request, send_from_directory
 
 from guard import sch_svg
+from kaaval_engine import chip as kchip
 from app import engine, inputs, planner, runner, store
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -184,6 +185,33 @@ def api_sheet(rid):
     hl = request.args.get("hl", "")
     return jsonify(ok=True, svg=sch_svg.render(cur, highlight=(hl,) if hl else ()),
                    sheets=[os.path.relpath(n, root) for n in names])
+
+
+@app.get("/runs/<rid>/chip")
+def chip_page(rid):
+    if not store.run(rid):
+        abort(404)
+    return _page("chip.html")
+
+
+@app.get("/api/runs/<rid>/chip")
+def api_chip(rid):
+    """The whole Tiny Tapeout tile of the reviewed project (kaaval_engine.chip, read as text), with each analog
+    block's tests and findings from this review attached, for the zoom view: chip -> block -> transistor."""
+    lv = store.live(rid)
+    if lv is None:
+        abort(404)
+    root = os.path.realpath(os.path.join(runner.WORK, rid))
+    tile = kchip.read(root)
+    plans = lv.get("plan_results") or []
+    for inst in tile["instances"]:
+        cell = (inst.get("cell") or "").lower()
+        mine = [(k, pr) for k, pr in enumerate(plans) if (pr.get("plan") or {}).get("cell", "").lower() == cell]
+        inst["tests"] = [dict(k=k, kind=pr["plan"].get("kind"), why=pr["plan"].get("why"),
+                              findings=[dict(rule=f["rule"], message=f["message"]) for f in
+                                        ((pr.get("result") or {}).get("findings") or [])])
+                         for k, pr in mine]
+    return jsonify(ok=True, **tile)
 
 
 @app.get("/api/runs/<rid>/wave")

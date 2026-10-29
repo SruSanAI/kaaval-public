@@ -33,6 +33,8 @@ def test_divider_readings_are_load_effects(tmp_path):
     assert res["ok"] and not res["unmatched"], res
     by = {m["measured"]: m for m in res["matches"]}
     assert by[0.9]["how"] == "dc" and by[0.9]["load"] is None and by[0.6]["how"] == "dc" and by[0.6]["load"] == 1e5
+    text = " ".join(twin.explain(res))
+    assert "0.900 V" in text and "working state" in text and "set by what is connected" in text
 
 
 def test_zero_reading_is_a_powerup_state(tmp_path):

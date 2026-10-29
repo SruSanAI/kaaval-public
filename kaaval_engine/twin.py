@@ -87,8 +87,10 @@ def explain(res):
         pu = [x for x in hits if x["how"] == "powerup"]
         if dc:
             x = dc[0]
+            why = ("the block's working state" if x["load"] is None else
+                   "the reading is set by what is connected (the unloaded answer differs)")
             out.append(f"{m:.3f} V: reproduced by the DC answer with {load(x)} ({x['simulated']:.3f} V at {x['corner']}, "
-                       f"{x['temp']} °C; {len(dc)} matching context(s)): the reading is set by what is connected.")
+                       f"{x['temp']} °C; {len(dc)} matching context(s)): {why}.")
         if pu:
             x = pu[0]
             out.append(f"{m:.3f} V: reproduced by a power-up from 0 V with {load(x)} ({x['simulated']:.3f} V at "

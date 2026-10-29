@@ -1,0 +1,51 @@
+/* Kaaval Zoom: the tile on the left, the selected block on the right. Ink for the drawing, red for findings. */
+.zoom{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr);gap:16px;padding:16px;min-height:calc(100vh - 64px);box-sizing:border-box}
+@media (max-width:1000px){.zoom{grid-template-columns:minmax(0,1fr)}}
+.z-tile,.z-insp{border:1px solid var(--border);border-radius:6px;background:var(--bg-1);display:flex;flex-direction:column;min-width:0}
+.z-h{display:flex;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)}
+#tile{width:100%;height:auto;display:block;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:20px 20px}
+#tile text{font:500 10px var(--mono);fill:var(--text-2)}
+#tile .rail{stroke:var(--text-1);stroke-width:2}
+#tile .rail.off{stroke:var(--text-3);stroke-dasharray:4 4}
+#tile .rl{fill:var(--text-1)}
+#tile .pad rect{fill:var(--bg-2);stroke:var(--border-strong)}
+#tile .pad.on rect{fill:var(--bg-1);stroke:var(--text-1)}
+#tile .pad.on text{fill:var(--text-1)}
+#tile .pad .sub{fill:var(--text-3);font-size:9px}
+#tile .w{fill:none;stroke:var(--text-3);stroke-width:1.2}
+#tile .w.rail{stroke:var(--text-2)}
+#tile .w.analog_pad{stroke:var(--text-1)}
+#tile .w.hl{stroke:var(--accent);stroke-width:2.4}
+#tile .nn{fill:var(--text-3);font-size:9px}
+#tile .blk{cursor:pointer;outline:none}
+#tile .blk rect{fill:var(--bg-0);stroke:var(--text-3);stroke-width:1.2}
+#tile .blk.a rect{stroke:var(--text-1);stroke-width:1.6}
+#tile .blk.d rect{stroke-dasharray:5 3}
+#tile .blk.bad rect{stroke:var(--accent);stroke-width:2}
+#tile .blk.sel rect,#tile .blk:focus-visible rect{fill:var(--bg-2)}
+#tile .bn{font:600 12px var(--sans);fill:var(--text-1)}
+#tile .bt{fill:var(--text-3)}
+#tile .blk.bad .bt{fill:var(--accent)}
+#tile .pin{fill:var(--text-1);cursor:pointer}
+#tile .pn{font-size:9px;fill:var(--text-2)}
+.z-legend{margin:0;padding:10px 14px;border-top:1px solid var(--border);font-size:10.5px;color:var(--text-3);display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.z-legend .k{display:inline-block;width:14px;height:10px;border:1.6px solid var(--text-1);border-radius:2px;margin-right:4px;vertical-align:-1px}
+.z-legend .k.d{border-style:dashed;border-color:var(--text-3)}
+.z-legend .k.r{border-color:var(--accent)}
+.z-body{padding:14px;overflow:auto}
+.z-body h3{margin:16px 0 8px;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.z-body h3:first-child{margin-top:0}
+.z-empty{margin:0;color:var(--text-3);font-size:13px;line-height:1.5}
+.z-pins{width:100%;border-collapse:collapse;font-size:11.5px}
+.z-pins td{padding:5px 6px;border-bottom:1px solid var(--border-subtle);vertical-align:top}
+.z-pins td.k{color:var(--text-3)}
+.z-pins tr{cursor:pointer}
+.z-pins tr:hover td{background:var(--bg-2)}
+.z-test{border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:8px}
+.z-test.bad{border-color:var(--accent)}
+.z-test p{margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--text-1)}
+.z-test .r{color:var(--accent);margin-right:6px}
+.z-test .ok{color:var(--ok)}
+.z-test .why{color:var(--text-3);font-size:11.5px}
+.z-sch{border:1px solid var(--border);border-radius:4px;background:var(--bg-0);overflow:auto;max-height:420px}
+.z-sch svg{width:100%;height:auto;display:block}

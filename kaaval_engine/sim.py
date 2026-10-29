@@ -251,6 +251,36 @@ def op_states(tb, corner, temps, states, timeout=600):
     return res
 
 
+def drive_corner(tb, corner, temps, vscales, npads, loads, timeout=600):
+    """{(temp, vscale): ({pad index: [volts at each load]}, err)} for one corner in ONE ngspice session: the DC voltage
+    at every pad with element Rdrv<i> set to each load in turn (None = open)."""
+    sup = tb.supplies()
+    lines, keys = [], []
+    for t in temps:
+        for v in vscales:
+            lines.append(f"option temp={t}")
+            for name, _, val in sup:
+                lines.append(f"alter {name.lower()} dc={val * v:.6g}")
+            for j, r in enumerate(loads):
+                lines += [f"alter rdrv{i} r={r or 1e15:.6g}" for i in range(npads)]
+                lines.append("op")
+                lines += [f"let kdrv{i} = v(pad{i})" for i in range(npads)]
+                lines.append(f"echo KAAVAL_DRV {len(keys)} {j} " + " ".join(f"$&kdrv{i}" for i in range(npads)))
+            keys.append((t, v))
+    out, err = run(deck(tb, corner, 27, 1.0, control="\n".join(lines)), timeout=timeout)
+    if err:
+        return {k: (None, err) for k in keys}
+    got = {}
+    for m in re.finditer(r"^KAAVAL_DRV (\d+) (\d+) (.*)$", out, re.M):
+        got.setdefault(int(m.group(1)), {})[int(m.group(2))] = [float(x) for x in m.group(3).split()]
+    res = {}
+    for n, k in enumerate(keys):
+        g = got.get(n, {})
+        res[k] = (({i: [g[j][i] for j in range(len(loads))] for i in range(npads)}, None) if len(g) == len(loads)
+                  else (None, "no operating point at every load (did not converge)"))
+    return res
+
+
 # ---------------------------------------------------------------- switching circuits: the designer's own transient
 SI = {"f": 1e-15, "p": 1e-12, "n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "meg": 1e6, "g": 1e9}
 

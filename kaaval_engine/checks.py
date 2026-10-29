@@ -392,3 +392,40 @@ def overstress(per, models):
                          f"{', '.join(states)}. A higher-voltage node reaches a lower-voltage device: a level shifter "
                          f"or a thick-oxide device is missing on that path, or the block is not safe while one rail is "
                          f"still off.")]
+
+
+def drive(per, ports, board_min=1e6, tol=0.02, loads=(1e7, 1e6, 1e5, 1e4)):
+    """Can an output that leaves the chip drive what the board puts on it? per: {(corner, temp, vscale): ({pad index:
+    [volts open, then at each of `loads`]}, err)} (sim.drive_corner). Output resistance is estimated from the open and
+    board_min-loaded voltages, R_out = R (V_open - V) / V.
+      weak_output   the pad's voltage moves by more than tol with board_min (Tiny Tapeout's recommended minimum
+                    board pull-down) to ground: the reading depends on the meter or board."""
+    out = []
+    for i, port in enumerate(ports):
+        worst, n = None, 0
+        for c, (r, e) in per.items():
+            if e or not r or i not in r:
+                continue
+            n += 1
+            v = r[i]
+            v0, vb = v[0], v[1 + list(loads).index(board_min)]
+            if abs(v0) < 0.05:
+                continue                      # an output resting near 0 V has nothing to lose to a pull-down
+            shift = abs(v0 - vb) / abs(v0)
+            if worst is None or shift > worst[0]:
+                worst = (shift, c, v)
+        if worst and worst[0] > tol:
+            shift, c, v = worst
+            rout = board_min * (v[0] - v[2]) / v[2] if v[2] else float("inf")
+            at = ", ".join(f"{fmt_ohm(l)} {x:.3f} V" for l, x in zip(loads, v[1:]))
+            out.append(dict(rule="analog/weak_output", severity="warn", device=port, worst=c, n=n, rout=rout,
+                            volts=v, message=f"{port} has about {fmt_ohm(rout)} output resistance and nothing to "
+                            f"drive the pad: {v[0]:.3f} V unloaded, {at} to ground (at {c[0]}, {c[1]} \u00b0C, supply "
+                            f"x{c[2]:g}). Tiny Tapeout's board guide asks for pull-downs of at least "
+                            f"{fmt_ohm(board_min)}, which already moves it {shift * 100:.1f} %: what a meter or the "
+                            f"board reads depends on its load. A buffer between the block and the pad fixes it."))
+    return out
+
+
+def fmt_ohm(r):
+    return f"{r / 1e6:g} M\u03a9" if r >= 1e6 else f"{r / 1e3:.3g} k\u03a9" if r >= 1e3 else f"{r:.3g} \u03a9"

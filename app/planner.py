@@ -52,10 +52,12 @@ designer's own testbenches.
    domains    for a cell with supplies at different voltages (1.8 V and 3.3 V): every transistor's voltages are solved
               with all rails on and with each rail off while the others are up, and judged against the device's
               rating (1.8 V thin-oxide devices against 3.3 V nodes: a missing level shifter or thick-oxide device).
+   drive      for a cell output that leaves the chip (listed in pads): the load on its pad is swept (open, 10 Mohm, 1 Mohm,
+              100 kohm, 10 kohm) and the engine reports its output resistance and whether 1 Mohm already moves it.
    A plan names the cell, its supply ports and voltages, its ground ports, DC biases on input ports, controls
    (enable / reset ports and their active voltage; sequence only), loads on ports (ohms or farads), pads (ports that
-   leave the chip through a Tiny Tapeout analog pad: the engine adds the pad path, 500 ohm, 5 pF and the board's
-   10 kohm pulldown), ties, the cut (stability only), and the process corners (tt ss ff sf fs), temperatures (°C)
+   leave the chip through a Tiny Tapeout analog pad: the engine adds the pad path, 500 ohm and 5 pF; the drive test
+   sweeps the board's load), ties, the cut (stability only), and the process corners (tt ss ff sf fs), temperatures (°C)
    and supply scales to run (at most 45 conditions).
 For every block also label each port's role (supply, ground, enable, reset, analog_out, analog_in, bias, digital),
 quoting the evidence (a doc line, a label, the devices on it).
@@ -86,7 +88,7 @@ SCHEMA = {
                              "cut", "corners", "temps", "vscales", "why"],
                 "properties": {
                     "cell": {"type": "string"},
-                    "kind": {"type": "string", "enum": ["powerup", "stability", "sequence", "domains"]},
+                    "kind": {"type": "string", "enum": ["powerup", "stability", "sequence", "domains", "drive"]},
                     "controls": {"type": "array", "items": {
                         "type": "object", "additionalProperties": False, "required": ["port", "volts"],
                         "properties": {"port": {"type": "string"}, "volts": {"type": "number"}}}},
@@ -251,6 +253,7 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
 
 SUP = re.compile(r"(?i)^(v?dd\w*|v[ad]?pwr|vcc\w*|avdd\w*|dvdd\w*|vdd3v3|vpwr\w*)$")
 GND = re.compile(r"(?i)^(v?ss\w*|v?gnd\w*|agnd|dgnd)$")
+OUT = re.compile(r"(?i)^(v?out\w*|\w*_out|vref\w*|\w*ref|v?bgr\w*|iout\w*|ua\[?\d\]?)$")
 CTL = re.compile(r"(?i)^(ena?|enable\w*|en_\w+|\w*_en|rst\w*|reset\w*|pd|pwr_?dn|pdn)$")
 
 
@@ -311,6 +314,12 @@ def _rules(ws, log, max_cells=20):
             plans.append(dict(cell=c["cell"], kind="domains", supplies=ep["supplies"], grounds=gnd, loads=[],
                               corners=["tt", "ss", "ff"], temps=[-40, 27, 125], vscales=[1.0, 1.1],
                               why="1.8 V devices next to a 3.3 V rail; rail voltages guessed: " + guess))
+        outs = [p for p in c["ports"] if OUT.match(p) and p not in sup + gnd]
+        if outs:
+            plans.append(dict(cell=c["cell"], kind="drive", supplies=ep["supplies"], grounds=gnd, loads=[],
+                              pads=[{"port": p} for p in outs[:2]], corners=CORNERS, temps=[-40, 27, 125],
+                              vscales=[1.0], why="outputs by pin names, each on a Tiny Tapeout pad; rail voltages "
+                                                 "guessed: " + guess))
         for ep in plans:
             log("plan", f"rules: {ep['kind']} {c['cell']}", plan=ep)
             try:

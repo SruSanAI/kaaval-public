@@ -37,12 +37,16 @@ import os, re
 from kaaval_engine import checks, sim, spice_cells, vcd
 from kaaval_engine import netlist as N
 
-KINDS = {"powerup", "stability", "sequence", "domains"}
+KINDS = {"powerup", "stability", "sequence", "domains", "drive"}
 MAX_CONDS = 45
 MAX_RUNS = 128                    # sequence tests: cases x conditions, each one power-up transient
 # the Tiny Tapeout analog pad path (tinytapeout.com/specs/analog): under 500 ohm and 5 pF from the macro pin to the pad
-# through the analog switch, and the demo board's 10 kohm pulldown on the pin
-PAD = dict(ohms=500.0, farads=5e-12, pulldown=10e3)
+# through the analog switch. Whatever is on the board is not modelled here: TT's demo-board guide says the stock analog
+# pull-downs (value unpublished) load outputs too heavily and should be removed or be at least 1 Mohm (BOARD_MIN); the
+# drive test sweeps the load instead of assuming one.
+PAD = dict(ohms=500.0, farads=5e-12)
+BOARD_MIN = 1e6
+DRIVE_LOADS = [1e7, BOARD_MIN, 1e5, 1e4]          # resistive loads on a pad (ohm), after the unloaded case
 FAST, SLOW = 2e-6, 1e-3          # rail ramp times
 # a second rail arrives some time after the first is up; no one gap is right for every chip (it depends on the board's
 # regulators), so the gap is swept and a finding reports the smallest gap that fails and the largest that passes
@@ -162,6 +166,8 @@ def validate(plan, root):
     for pd in plan.get("pads") or []:
         if str(pd.get("port", "")).lower() not in nets:
             err.append(f"pad port {pd.get('port')!r} is not a net of {plan['cell']}")
+    if plan.get("kind") == "drive" and not plan.get("pads"):
+        err.append("a drive test needs at least one pad port (an output that leaves the chip)")
     if plan.get("kind") == "stability":
         br = plan.get("break") or {}
         if str(br.get("net", "")).lower() not in nets:
@@ -250,7 +256,7 @@ def compile_bench(plan, root):
     for i, pd in enumerate(plan.get("pads") or []):
         lines.append(f"Rpad{i} {nets[pd['port'].lower()]} pad{i} {PAD['ohms']:.6g}")
         lines.append(f"Cpad{i} pad{i} 0 {PAD['farads']:.6g}")
-        lines.append(f"Rpd{i} pad{i} 0 {PAD['pulldown']:.6g}")
+        lines.append(f"Rdrv{i} pad{i} 0 1e15")          # the drive test's load; open otherwise
     return sim.Testbench(sch=p, circuit="\n".join(lines), analyses=[".op"])
 
 
@@ -266,7 +272,7 @@ def run(plan, root, on_result=None):
         if names else []
     corners, temps, vscales = _pvt(plan)
     bench = "\n".join(l for l in tb.circuit.splitlines()
-                      if l.startswith(("Vplan", "Vgnd", "Rplan", "Cplan", "Vbias", "Rtie", "Vctl", "Rpad", "Cpad", "Rpd")))
+                      if l.startswith(("Vplan", "Vgnd", "Rplan", "Cplan", "Vbias", "Rtie", "Vctl", "Rpad", "Cpad", "Rdrv")))
     if plan["kind"] == "stability":
         nets = {n.lower(): n for n in _nets(tb.circuit)}
         circ, _, y = sim.break_net(tb.circuit, nets[plan["break"]["net"].lower()], plan["break"]["pins"])
@@ -281,6 +287,16 @@ def run(plan, root, on_result=None):
                      ("dc_gain_db", "ugf", "pm", "gm_db", "pcf", "positive_dc", "f", "mag", "phase")}))
                 for (c, t, v), (r, e) in sw.items()]
         return dict(ok=True, findings=checks.stability(sw), results=rows, bench=bench)
+    if plan["kind"] == "drive":
+        per = {}
+        for c in corners:
+            for k, r in sim.drive_corner(tb, c, temps, vscales, len(plan["pads"]), [None] + DRIVE_LOADS).items():
+                per[(c,) + k] = r
+                if on_result:
+                    on_result((c,) + k, *r)
+        rows = [dict(corner=c, temp=t, vscale=v, error=e, volts=r) for (c, t, v), (r, e) in per.items()]
+        return dict(ok=True, findings=checks.drive(per, [p["port"] for p in plan["pads"]], BOARD_MIN), results=rows,
+                    bench=bench)
     if plan["kind"] == "domains":
         sup = list(plan["supplies"].items())
         per = {}

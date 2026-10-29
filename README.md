@@ -80,6 +80,11 @@ sizing-fix search behind "Try a sizing fix". With `MINNAL_URL` and `MINNAL_KEY` 
 Minnal's keyed engine API and its verified proposal comes back; without them every review still runs in full and the
 button says the fix search is not connected. Minnal itself is not part of this submission.
 
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) · [CHANGELOG.md](CHANGELOG.md) · security reports: [SECURITY.md](SECURITY.md) (never a
+public issue) · [Code of Conduct](CODE_OF_CONDUCT.md)
+
 ## Limits
 
 - Open PDKs only (sky130 today); foundry PDKs and commercial simulators are not supported.

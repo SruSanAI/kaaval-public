@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security problems go to sanjay@srusan.com or [private reporting](https://github.com/SruSanAI/kaaval-public/security/advisories/new), not here.**
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "git rev-parse --short HEAD, and ngspice --version"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS and runtime version
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: What you ran
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Paste the output. Remove any real secrets first.
+      render: text
+    validations:
+      required: true

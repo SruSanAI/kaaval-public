@@ -51,6 +51,15 @@ conditions where it fails, a **sequence matrix** (every power-up order against e
 waveform), the **power-up waveform** of any condition (simulated on click), and the **Bode plot** of a
 loop at every condition.
 
+## Silicon Twin: from what the chip did back to why
+
+A bring-up report says what the fabricated chip showed at one node. `tools/silicon_twin.py` rebuilds the block in its
+chip context and searches what a bench changes: the load on the node (open, 10 MΩ meter, 1 MΩ, 100 kΩ, 10 kΩ), a
+power-up from 0 V (step-checked) and the process corners. Each measured value is either reproduced, with the kind of
+cause (the DC answer under that load: the reading is the load's doing; or the state a power-up lands in: the chip came
+up in another operating point), or reported as not reproduced. Nothing is fitted to match. Tests on our own circuits:
+`tests/test_kaaval_twin.py`.
+
 ## Run it
 
 Needs only open tools: [ngspice](https://ngspice.sourceforge.io/) and the open sky130 PDK.
@@ -72,7 +81,7 @@ Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval
 | `KAAVAL_REVIEWS_PER_HOUR`, `KAAVAL_MAX_WAITING` | per-visitor limit (default 4/hour) and queue cap (default 6) |
 
 Tests (they simulate): `python tests/test_local_engine.py`, `tests/test_kaaval_startup.py`,
-`tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_stdcells.py`,
+`tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_stdcells.py`,
 `tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`.
 
 ## What runs where

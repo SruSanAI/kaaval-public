@@ -40,10 +40,9 @@ not foundry sign-off**; one measured run is not a guarantee.
    runs, and refuses raw SPICE. Without a Muse Spark key, a labelled no-model baseline powers up every circuit.
 3. **Prove.** The engine builds every deck itself and simulates at all 45 conditions. A finding is shown only after
    its own confirmation (second states re-solved, oscillations re-run with a stiffer integrator). Every power-up is
-   re-run at a finer time step and counts only when two successive steps agree; when none do, Kaaval reports a
-   **marginal start-up** (the state reached depends on numerical detail, so on silicon it depends on noise and ramp)
-   instead of a pass or a fail. Two coarse steps can still agree on a wrong state: a finding's value is quoted with
-   the step it was measured at.
+   confirmed at a fine time step: the default step must agree with a 2 ns maximum step, or 2 ns with 1 ns (two coarse
+   steps can agree on a wrong state). When none agree, Kaaval reports a **marginal start-up** (the state reached
+   depends on numerical detail, so on silicon it depends on noise and ramp) instead of a pass or a fail.
 4. **Fix.** A proposal, never a merge: a sizing fix is re-simulated at all 45 conditions before it is shown.
 
 The review page shows the evidence behind each finding: the failing device on its own schematic sheet, the
@@ -59,6 +58,14 @@ power-up from 0 V (step-checked) and the process corners. Each measured value is
 cause (the DC answer under that load: the reading is the load's doing; or the state a power-up lands in: the chip came
 up in another operating point), or reported as not reproduced. Nothing is fitted to match. Tests on our own circuits:
 `tests/test_kaaval_twin.py`.
+
+## Analog blocks in static timing
+
+Digital timing tools (OpenSTA, OpenROAD) time paths from Liberty models; an analog macro has none, so the paths across
+the digital-analog boundary go untimed. `tools/analog_lib.py` characterises an analog cell in ngspice the way standard
+cells are (delay 50 %-50 %, output transition 20-80 %, input capacitance, over input slew x output load, per corner)
+and writes a Liberty file per corner. Test on our own cell, checked with a real Liberty reader (yosys):
+`tests/test_kaaval_liberty.py`.
 
 ## Run it
 
@@ -81,7 +88,7 @@ Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval
 | `KAAVAL_REVIEWS_PER_HOUR`, `KAAVAL_MAX_WAITING` | per-visitor limit (default 4/hour) and queue cap (default 6) |
 
 Tests (they simulate): `python tests/test_local_engine.py`, `tests/test_kaaval_startup.py`,
-`tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_stdcells.py`,
+`tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_liberty.py`, `tests/test_kaaval_stdcells.py`,
 `tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`.
 
 ## What runs where

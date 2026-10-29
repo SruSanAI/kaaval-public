@@ -467,7 +467,10 @@ def _sched_end(ramp, schedule):
     return max([ramp] + ends)
 
 
-STEPS = (None, 20000, 2e-9, 1e-9)       # time-step ladder: default, stop/20000, then absolute maximum steps
+# time-step ladder: the default step, then 2 ns and 1 ns maximum steps. Two coarse steps can agree on a wrong state
+# (TT08 bgr_agolmanesh at tt, 27 C: 80 ns and 16 ns both said 0.31 V, 2 ns and 1 ns 0.525 V), so a result is only
+# accepted against a fine step: the default must match 2 ns, or 2 ns must match 1 ns.
+STEPS = (None, 2e-9, 1e-9)
 
 
 def _same(a, b, vtol=0.02, itol=0.05):
@@ -492,7 +495,7 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
     for level in STEPS:
         if not todo:
             break
-        tmax = None if level is None else (stop / level if level > 1 else level)
+        tmax = level
         res = startup_corner(tb, corner, todo, vscale, ramp, settle, timeout * (1 if level is None else 4), schedule,
                              tmax=tmax)
         nxt = []
@@ -501,7 +504,8 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
             prev = seen[t][-1] if seen[t] else None
             seen[t].append((r, e, tmax))
             if prev and not prev[1] and not e and _same(prev[0], r):
-                final[t] = (dict(r, tmax=tmax or stop / 4000, step_check="agrees with a coarser step"), None)
+                final[t] = (dict(r, tmax=tmax, step_check=f"agrees at {fmt_step(prev[2] or stop / 4000)} and "
+                                                          f"{fmt_step(tmax)}"), None)
             else:
                 nxt.append(t)
         todo = nxt

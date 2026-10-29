@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Kaaval — the senior reviewer for your analog chip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/kaaval.css">
+<link rel="stylesheet" href="/static/intake.css">
+<script>try{const t=localStorage.getItem('kv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="r">
+<div class="boot" id="boot" aria-hidden="true">
+  <div class="boot-in mono">
+    <ol id="boot-list"></ol>
+    <div class="boot-n"><span id="boot-pc">0</span>%</div>
+  </div>
+</div>
+
+<nav class="r-nav">
+  <a class="r-logo" href="/" aria-label="Kaaval home"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="var(--accent)"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="1.6"/></svg>Kaaval</a>
+  <div class="r-links"><a href="#s1">Read</a><a href="#s2">Plan</a><a href="#s3">Prove</a><a href="#s4">Fix</a></div>
+  <span class="r-status mono" id="minnal"><span class="d"></span>Minnal</span>
+  <button class="r-theme" id="theme" type="button" aria-label="Switch light or dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg></button>
+</nav>
+
+<header class="r-hero">
+  <div class="r-copy">
+    <p class="r-kick mono">[ AI design review · open-silicon analog ]</p>
+    <h1 class="r-h1">The senior reviewer<br>your analog chip<br>never had.</h1>
+    <p class="r-lead">Kaaval reads your design, plans the tests a senior engineer would run, and proves every finding by
+      simulation at five process corners, three temperatures and three supplies, before the fab does it for you.</p>
+    <form class="r-ask" id="ask" autocomplete="off">
+      <div class="drop" id="drop"><label class="drop-inner">
+        <span class="sr">Repository link or owner/repo</span>
+        <span class="pr mono" aria-hidden="true">$</span>
+        <input id="src" spellcheck="false" placeholder="github.com/you/your-tapeout">
+        <input type="file" id="zip" accept=".zip" hidden>
+        <button class="r-zip mono" type="button" id="pick" title="Upload a .zip of the project">.zip</button>
+        <button class="r-go" id="go" type="submit" disabled>Review</button>
+      </label></div>
+      <div class="understood mono" id="und" aria-live="polite"></div>
+    </form>
+  </div>
+
+  <figure class="r-sheet" id="sheet">
+    <div class="r-sheet-h mono"><span>SHEET 1/1 · ref.sch · sky130</span><span id="probe-hint">drag across the circuit to see what Kaaval catches</span></div>
+    <svg class="r-draw" id="draw" viewBox="0 0 640 400" role="img" aria-label="Schematic of a self-biased current reference; findings are revealed under the probe"></svg>
+    <div class="r-note" id="note" aria-live="polite"><span class="tag mono">probe</span><p>Move the probe over the circuit.</p></div>
+  </figure>
+</header>
+
+<main>
+  <section class="r-sec" id="s1">
+    <div class="r-sh"><span class="mono">S.01</span><h2>Read</h2><p>Every schematic and SPICE netlist in the repository is rebuilt as text, the way xschem would netlist it. Units are checked against the silicon. Nothing in the repository ever runs.</p></div>
+    <pre class="r-term mono" id="term" aria-label="Review transcript"></pre>
+  </section>
+
+  <section class="r-sec" id="s2">
+    <div class="r-sh"><span class="mono">S.02</span><h2>Plan</h2><p>Muse Spark reads the whole design, names each block and its risks, and writes the tests the designer never ran. A plan is data: the engine checks every cell, port and value before anything is simulated.</p></div>
+    <div class="r-plan">
+      <pre class="mono"><b>{</b>
+  "cell":     "ref.sch",
+  "kind":     "powerup",
+  "supplies": {"VDD": 1.8},
+  "grounds":  ["VSS"],
+  "corners":  ["tt","ss","ff","sf","fs"],
+  "temps":    [-40, 27, 125],
+  "vscales":  [0.9, 1.0, 1.1],
+  "why":      "self-biased loop, no start-up path"
+<b>}</b></pre>
+      <ul class="r-checks mono"><li><i>✓</i>cell exists in the repository</li><li><i>✓</i>VDD, VSS are nets of ref.sch</li><li><i>✓</i>1.8 V inside 0.3–6 V</li><li><i>✓</i>45 conditions ≤ 45</li><li><i>✓</i>kind is a known test</li><li class="x"><i>✕</i>raw SPICE from the planner: never accepted</li></ul>
+    </div>
+  </section>
+
+  <section class="r-sec" id="s3">
+    <div class="r-sh"><span class="mono">S.03</span><h2>Prove</h2><p>The circuit is powered up from 0 V and held, at every corner, temperature and supply. A second state only counts once the DC solver confirms it; an oscillation only counts if it survives a stiffer integrator.</p></div>
+    <div class="r-proof">
+      <div class="r-lat" id="lat" aria-label="45 power-up results"></div>
+      <div class="r-side">
+        <div class="r-big" id="ro-big">30<small>/45 dead</small></div>
+        <p class="mono r-small">CAUGHT · confirmed at every −40 °C and 27 °C condition<br>15 start at 125 °C on leakage alone — not a start-up circuit</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="r-sec" id="s4">
+    <div class="r-sh"><span class="mono">S.04</span><h2>Fix</h2><p>A proposal, never a merge. Every fix is re-simulated at all 45 conditions before it is shown, and you decide whether it goes into your design.</p></div>
+    <div class="r-fix">
+      <pre class="r-diff mono"><span class="h">ref.sch · proposed</span>
+<span class="a">+ XM6 n1 0 VDD VDD sky130_fd_pr__pfet_01v8 L=20 W=0.42</span>
+<span class="c">  # weak always-on start-up: kicks the loop out of the 0 A state</span></pre>
+      <div class="r-fix-r">
+        <button class="r-switch" id="tog" type="button" role="switch" aria-checked="false"><span class="tk"><span class="th"></span></span><span class="mono">apply the proposal</span><b class="mono" id="tog-s">off</b></button>
+        <p class="mono r-small" id="fix-res">before: 30/45 dead · after: re-simulate to see</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="r-facts" aria-label="Measured, with their bounds">
+    <div><b class="v" data-to="94.8" data-dec="1" data-suffix="%">0</b><span class="mono">of 8,394 devices netlisted exactly as xschem, on 434 netlists</span></div>
+    <div><b class="v" data-to="160">0</b><span class="mono">open-silicon analog designs read as text</span></div>
+    <div><b class="v" data-to="117.262" data-dec="1" data-suffix="°">0</b><span class="mono">phase margin, equal to the exact answer on our test loop</span></div>
+    <div><b class="v" data-to="45">0</b><span class="mono">conditions behind every finding</span></div>
+  </section>
+
+  <section class="r-sec recent" id="recent" hidden><div class="r-sh"><span class="mono">S.05</span><h2>Your reviews</h2></div><div class="list" id="runs"></div></section>
+
+  <footer class="r-foot mono"><span>Kaaval · srusan</span><span>Pre-silicon simulation on open PDKs. One measured run, not a guarantee. Not foundry sign-off.</span><span>ngspice · sky130 · Muse Spark</span></footer>
+</main>
+<script src="/static/intake.js"></script>
+</body>
+</html>

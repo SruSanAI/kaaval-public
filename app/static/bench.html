@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Review · Kaaval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/kaaval.css">
+<script>try{const t=localStorage.getItem('kv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="top">
+  <a class="mark k-mark" href="/" aria-label="Kaaval home">Kaaval<i></i></a>
+  <nav class="crumbs" aria-label="what is being reviewed"><span id="c-src">…</span><span class="sep">/</span><span class="mono" id="c-sha">—</span><span class="sep">/</span><span class="mono" id="c-tb">—</span></nav>
+  <div class="sp"></div>
+  <span class="chip" id="simchip" title="Checking the simulator and process kit…"><span class="d"></span><span class="t">checking simulator…</span></span>
+  <span class="chip" id="minnal"><span class="d"></span>Minnal</span>
+  <span class="chip live" id="state"><span class="d"></span>Starting</span>
+  <button class="btn icon" id="theme" type="button" aria-label="Switch light or dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.25a5.75 5.75 0 0 1 0 11.5z" fill="currentColor"/></svg></button>
+</header>
+<main class="bench">
+  <aside class="pane" aria-label="Review progress and checks">
+    <div class="pane-h">Review<span class="sp"></span><span class="num" id="elapsed"></span></div>
+    <div class="scroll">
+      <ol class="steps" id="steps"></ol>
+      <div class="fam"><h3>Checks</h3><div id="fams"></div></div>
+    </div>
+  </aside>
+  <section class="pane center" aria-label="Circuit and PVT sweep">
+    <div class="tbar mono" id="tbar" aria-label="Title block">
+      <div class="tb-d"><i>DRAWING</i><span id="tb-dut">…</span></div>
+      <div><i>TESTBENCH</i><span id="tb-tb">—</span></div>
+      <div class="r"><i>TRAPS</i><b id="tb-traps">–</b></div>
+      <div class="r"><i>RISKS</i><b id="tb-risks">–</b></div>
+      <div class="r"><i>SIMULATED</i><b id="tb-sims">0/45</b></div>
+      <div class="r"><i>TIME</i><b id="tb-time">–</b></div>
+    </div>
+    <div class="canvas" id="canvas">
+      <div class="stage" id="stage"></div>
+      <div class="empty-canvas" id="cv-empty"><div><div class="spin"></div><span id="cv-msg">Fetching the design…</span></div></div>
+      <div class="hud"><div class="label" id="cv-label" hidden></div>
+        <div class="tools"><button class="btn icon" id="zin" type="button" aria-label="Zoom in">+</button>
+          <button class="btn icon" id="zout" type="button" aria-label="Zoom out">−</button>
+          <button class="btn icon" id="zfit" type="button" aria-label="Fit to view"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div>
+      
+      <div class="legend" id="legend" hidden><span><i style="background:var(--ok)"></i>keeps margin</span><span><i style="background:var(--near)"></i>under 100 mV</span><span><i style="background:var(--fail)"></i>falls into triode</span><span><i style="background:var(--idle)"></i>not in saturation by design</span></div>
+    </div>
+    <div class="pvt" aria-label="Process, temperature and supply sweep">
+      <div class="pvt-h"><b>PVT sweep</b><span class="n num" id="pvt-n">0 / 45</span><span class="hint">corner × temperature × supply · each cell is one simulation of every transistor</span></div>
+      <div class="matrix" id="matrix"></div>
+    </div>
+    <div class="evid" id="evid" hidden aria-label="Evidence for the selected finding">
+      <div class="evid-h"><b id="ev-title">Evidence</b><span class="hint" id="ev-hint"></span><button class="btn icon" id="ev-x" type="button" aria-label="Close evidence">×</button></div>
+      <div class="evid-b"><div class="ev-lat" id="ev-lat"></div><div class="ev-plot"><canvas id="ev-cv"></canvas><div class="ev-read mono" id="ev-read"></div></div></div>
+    </div>
+  </section>
+  <aside class="pane dock" aria-label="Reviewer">
+    <div class="who"><div class="avatar"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h2.5l1.5-4 2.5 8 1.5-4H14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div><div class="nm">Reviewer</div><div class="st" id="who-st">deterministic checks · Muse Spark not connected</div></div></div>
+    <div class="tabs" role="tablist"><button role="tab" id="tab-f" aria-selected="false">Findings <span class="num" id="tab-fn">0</span></button>
+      <button role="tab" id="tab-a" aria-selected="true">Activity</button></div>
+    <div class="scroll"><div class="feed" id="flist" hidden></div><div class="feed" id="feed" aria-live="polite"></div></div>
+    <div class="composer"><div class="box"><textarea id="ask" disabled placeholder="Ask about this design…"></textarea></div>
+      <div class="note">Questions, README specs and fix proposals arrive with Muse Spark. Every number above comes from a simulation.</div></div>
+  </aside>
+</main>
+<div class="tip" id="tip"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="/static/bench.js"></script>
+</body>
+</html>

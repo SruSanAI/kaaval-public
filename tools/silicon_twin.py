@@ -22,13 +22,15 @@ def main():
     ap.add_argument("--supplies", required=True, help="PORT=volts,...")
     ap.add_argument("--grounds", default="")
     ap.add_argument("--no-pad", action="store_true", help="the node does not leave the chip")
+    ap.add_argument("--bench", default="none", help="loads the bench really had, ohms or 'none', e.g. none,1e7")
     ap.add_argument("--out")
     a = ap.parse_args()
     ws = engine.upload(runner.design_files(a.design))
     root = os.path.join(os.path.expanduser(os.environ.get("KAAVAL_WS", "~/.kaaval/ws")), ws)
     symptom = dict(cell=a.cell, node=a.node, measured=[float(x) for x in a.measured.split(",")],
                    supplies={k: float(v) for k, v in (s.split("=") for s in a.supplies.split(","))},
-                   grounds=[g for g in a.grounds.split(",") if g], pad=not a.no_pad)
+                   grounds=[g for g in a.grounds.split(",") if g], pad=not a.no_pad,
+                   bench=[None if b.strip().lower() == "none" else float(b) for b in a.bench.split(",")])
     res = twin.search(symptom, root, on_result=lambda k, r, e: print("  ran", k, "error" if e else "", flush=True))
     if not res["ok"]:
         sys.exit("; ".join(res["errors"]))

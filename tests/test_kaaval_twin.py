@@ -35,6 +35,9 @@ def test_divider_readings_are_load_effects(tmp_path):
     assert by[0.9]["how"] == "dc" and by[0.9]["load"] is None and by[0.6]["how"] == "dc" and by[0.6]["load"] == 1e5
     text = " ".join(twin.explain(res))
     assert "0.900 V" in text and "working state" in text and "set by what is connected" in text
+    # the bench had nothing connected: 0.9 V is reproduced on it, 0.6 V only possible with an assumed 100 kohm load
+    assert by[0.9]["on_bench"] and not by[0.6]["on_bench"] and res["tried"] == 2
+    assert "0.900 V: reproduced" in text and "0.600 V: possible" in text and "Searched 2 contexts" in text
 
 
 def test_zero_reading_is_a_powerup_state(tmp_path):

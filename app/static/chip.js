@@ -56,9 +56,9 @@
     const rails = [['VDPWR', '1.8 V', top - 30], ['VAPWR', '3.3 V', top - 12]];
     rails.forEach(([n, v, y]) => {
       const on = t.rails.includes(n);
-      g += `<line class="rail${on ? '' : ' off'}" x1="${L - 40}" x2="${R + 40}" y1="${y}" y2="${y}"/><text class="rl" x="${L - 46}" y="${y + 3}" text-anchor="end">${n} ${v}${on ? '' : ' (unused)'}</text>`;
+      g += `<line class="rail${on ? '' : ' off'}" x1="${L - 40}" x2="${R + 40}" y1="${y}" y2="${y}"/><text class="rl" x="${R + 40}" y="${y - 4}" text-anchor="end">${n} ${v}${on ? '' : ' (unused)'}</text>`;
     });
-    g += `<line class="rail" x1="${L - 40}" x2="${R + 40}" y1="${H - 20}" y2="${H - 20}"/><text class="rl" x="${L - 46}" y="${H - 17}" text-anchor="end">VGND</text>`;
+    g += `<line class="rail" x1="${L - 40}" x2="${R + 40}" y1="${H - 20}" y2="${H - 20}"/><text class="rl" x="${R + 40}" y="${H - 24}" text-anchor="end">VGND</text>`;
     // analog pads
     for (let i = 0; i < 6; i++) {
       const p = `ua[${i}]`, on = t.analog_pads.includes(p), paid = t.analog_pins != null && i < t.analog_pins;

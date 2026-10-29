@@ -63,7 +63,10 @@ A bring-up report says what the fabricated chip showed at one node. `tools/silic
 chip context and searches what a bench changes: the load on the node (open, 10 MΩ meter, 1 MΩ, 100 kΩ, 10 kΩ), a
 power-up from 0 V (step-checked) and the process corners. Each measured value is either reproduced, with the kind of
 cause (the DC answer under that load: the reading is the load's doing; or the state a power-up lands in: the chip came
-up in another operating point), or reported as not reproduced. Nothing is fitted to match. Tests on our own circuits:
+up in another operating point), or reported as not reproduced. It is a search over a fixed set of contexts, so a
+match shows a possible cause: every result says how many contexts were tried and the span their values cover, and only
+a match on the loads the bench really had (`--bench`) counts as reproduced; one that needs another load is reported as
+possible. No circuit parameter is changed to match. Tests on our own circuits:
 `tests/test_kaaval_twin.py`.
 
 ## Analog blocks in static timing

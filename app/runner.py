@@ -25,9 +25,10 @@ def _git(args, cwd, timeout=180):
     return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
 
 
-# only what Kaaval reads: schematics, symbols, netlists, project metadata and docs (never GDS/OASIS or binaries)
+# only what Kaaval reads: schematics, symbols, netlists, project metadata and docs (never GDS/OASIS or binaries), and
+# the top-level Verilog under src/ for the chip view (read as text to draw the tile, never compiled or run)
 WANT = ["*.sch", "*.sym", "*.spice", "*.sp", "*.cir", "*.spi", "*.net", "*.lib", "info.yaml", "*.md", "*.yaml",
-        "*.yml", "xschemrc", "*.mag"]
+        "*.yml", "xschemrc", "*.mag", "/src/*.v", "/src/*.sv"]
 
 
 def fetch(rid, src):

@@ -9,10 +9,15 @@ sim.startup_checked), and the process corners. Every simulated state is compared
   powerup   the state a power-up from 0 V lands in matches while the DC answer does not: the chip came up in another
             operating point (a start-up problem), not a measurement artefact
 
-A measurement no context reproduces is reported as not reproduced; nothing is fitted or tuned to match.
+This is a search over a fixed set of contexts, and loads alone can spread a weak output over a wide range, so a match
+shows a possible cause, not a proven one. The result says how many contexts were tried and the span their values
+cover. symptom["bench"] names the loads the bench really had (None for nothing connected, e.g. [None, 1e7] for an
+unloaded pin read by a 10 Mohm meter): only a match on one of those counts as reproduced on the bench's own setup; a
+match that needs another load is reported as possible with an assumed load. A measurement no context reaches is
+reported as not reproduced. No parameter of the circuit is changed to match.
 
     symptom = {"cell": "xschem/core_prel.sch", "supplies": {"VDD": 1.8}, "grounds": ["VSS"], "node": "Vbgr",
-               "measured": [1.17, 0.46], "pad": True}
+               "measured": [1.17, 0.46], "pad": True, "bench": [None, 1e7]}
     result = search(symptom, root)
 """
 from kaaval_engine import plan as P
@@ -46,6 +51,12 @@ def search(symptom, root, corners=CORNERS, temps=(27,), loads=LOADS, on_result=N
             contexts.append(dict(load=load, corner=x["corner"], temp=x["temp"], error=x["error"],
                                  dc=v[0] if v else None, powerup=v[1] if v else None,
                                  i_dc=x.get("i_op"), i_powerup=x.get("i_end"), findings=None))
+    return dict(match(symptom, contexts), node=node)
+
+
+def match(symptom, contexts):
+    """Compare every measured value with saved contexts (from search): the matching half of search, re-runnable."""
+    bench = symptom.get("bench", [None])
     matches, unmatched = [], []
     for m in symptom["measured"]:
         best = []
@@ -58,12 +69,14 @@ def search(symptom, root, corners=CORNERS, temps=(27,), loads=LOADS, on_result=N
                 if how == "powerup" and c["dc"] is not None and abs(c["dc"] - m) <= _tol(m):
                     continue
                 best.append(dict(measured=m, how=how, load=c["load"], corner=c["corner"], temp=c["temp"],
-                                 simulated=s, off=abs(s - m)))
+                                 simulated=s, off=abs(s - m), on_bench=c["load"] in bench))
         if best:
-            matches += sorted(best, key=lambda b: b["off"])[:6]
+            matches += sorted(best, key=lambda b: (not b["on_bench"], b["off"]))[:6]
         else:
             unmatched.append(m)
-    return dict(ok=True, node=node, contexts=contexts, matches=matches, unmatched=unmatched,
+    vals = [c[k] for c in contexts for k in ("dc", "powerup") if c[k] is not None]
+    return dict(ok=True, contexts=contexts, matches=matches, unmatched=unmatched, bench=bench,
+                tried=len(contexts), span=[min(vals), max(vals)] if vals else None,
                 errors=[c["error"] for c in contexts if c["error"]])
 
 
@@ -76,26 +89,32 @@ def _node(nodes, name):
 
 def explain(res):
     """Plain sentences for a search result: one per measured value."""
-    out = []
+    sp = res.get("span")
+    out = [f"Searched {res['tried']} contexts (loads x corners, each a DC answer and a step-checked power-up from 0 V)"
+           + (f"; their values span {sp[0]:.3f}-{sp[1]:.3f} V, so a match inside that span shows a possible cause, and "
+              f"one on the bench's own setup ({', '.join('nothing connected' if b is None else _ohm(b) for b in res['bench'])})"
+              f" is the stronger evidence." if sp else ".")]
     for m in sorted({x["measured"] for x in res["matches"]} | set(res["unmatched"])):
         hits = [x for x in res["matches"] if x["measured"] == m]
         if not hits:
             out.append(f"{m:.3f} V: not reproduced by any load, corner or power-up tried.")
             continue
         load = lambda x: "no load" if x["load"] is None else f"a {_ohm(x['load'])} load"
+        tag = lambda x: "on the bench's own setup" if x["on_bench"] else "only with an assumed load the bench did not report"
         dc = [x for x in hits if x["how"] == "dc"]
         pu = [x for x in hits if x["how"] == "powerup"]
         if dc:
             x = dc[0]
             why = ("the block's working state" if x["load"] is None else
                    "the reading is set by what is connected (the unloaded answer differs)")
-            out.append(f"{m:.3f} V: reproduced by the DC answer with {load(x)} ({x['simulated']:.3f} V at {x['corner']}, "
-                       f"{x['temp']} °C; {len(dc)} matching context(s)): {why}.")
+            out.append(f"{m:.3f} V: {'reproduced' if x['on_bench'] else 'possible'} by the DC answer with {load(x)}, "
+                       f"{tag(x)} ({x['simulated']:.3f} V at {x['corner']}, {x['temp']} °C; {len(dc)} matching "
+                       f"context(s)): {why}.")
         if pu:
             x = pu[0]
-            out.append(f"{m:.3f} V: reproduced by a power-up from 0 V with {load(x)} ({x['simulated']:.3f} V at "
-                       f"{x['corner']}, {x['temp']} °C), where the DC answer is different: the chip came up in "
-                       f"another operating point.")
+            out.append(f"{m:.3f} V: {'reproduced' if x['on_bench'] else 'possible'} by a power-up from 0 V with "
+                       f"{load(x)}, {tag(x)} ({x['simulated']:.3f} V at {x['corner']}, {x['temp']} °C), where the DC "
+                       f"answer is different: the chip came up in another operating point.")
     return out
 
 

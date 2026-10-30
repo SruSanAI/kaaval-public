@@ -498,9 +498,9 @@ def budget(seconds=FINE_BUDGET):
 def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, fine=None):
     """startup_corner, with every result confirmed against a finer time step. A power-up from 0 V can land in different
     states depending on the integrator's step (a circuit with several states and nothing choosing between them); a
-    result counts only when two successive steps of the ladder STEPS agree, and records the step (r["tmax"]). When two
-    completed steps disagree and no later pair agrees, the condition reports an error naming the values seen:
-    undetermined, never a pass or a fail. When the fine steps could not be run (timed out, or the shared budget `fine`
+    result counts only when two successive steps of the ladder STEPS agree, and records the step (r["tmax"]). When the
+    2 ns and 1 ns runs both complete and disagree, the condition reports an error naming the values seen: undetermined,
+    never a pass or a fail. When the fine steps could not be run (timed out, or the shared budget `fine`
     from budget() was spent) the condition reports "unconfirmed": not checked, never a finding."""
     fine = budget() if fine is None else fine
     stop = _sched_end(ramp, schedule) + settle
@@ -539,13 +539,18 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
         vals = ", ".join(("error" if e else f"{r['i_end'] * 1e6:.3g} \u00b5A") + f" at {fmt_step(tm or stop / 4000)}"
                          for r, e, tm in seen[t])
         done = [r for r, e, _ in seen[t] if not e and r]
+        # only fine steps can call a start-up marginal: a default step that disagrees with 2 ns is usually just wrong
+        # (TT08 bgr: 80 ns said 0.31 V, 2 ns and 1 ns agreed on 0.525 V), so without a completed 1 ns run to settle it
+        # the condition is unconfirmed, not marginal
+        fine_done = [r for r, e, tm in seen[t] if not e and r and tm is not None]
         if not done:
             final[t] = (None, seen[t][-1][1] if seen[t] else "did not complete")
-        elif any(not _same(a, b) for a, b in zip(done, done[1:])):
+        elif len(fine_done) >= 2 and any(not _same(a, b) for a, b in zip(fine_done, fine_done[1:])):
             final[t] = (None, f"undetermined: the power-up result changes with the simulator's time step ({vals})")
         else:
-            why = (f"the {fine['timed_out']} run timed out" if fine["timed_out"]
-                   else "the fine-step time budget was spent")
+            bad = [(e, tm) for r, e, tm in seen[t] if e and tm is not None and e != "timeout"]
+            why = (f"the {fine['timed_out']} run timed out" if fine["timed_out"] else
+                   f"the {fmt_step(bad[-1][1])} run failed ({bad[-1][0]})" if bad else "the fine-step time budget was spent")
             final[t] = (None, f"unconfirmed: {why}, so the result was not checked against a finer step ({vals})")
     return final
 

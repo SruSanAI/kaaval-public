@@ -85,6 +85,23 @@ def test_fine_step_budget_reports_unconfirmed_not_marginal():
     assert "2 ns at tt run timed out" in errs[2]
     assert checks.startup({("tt", 27, 1.0): (None, errs[0])}) == []
 
+
+def test_coarse_disagreement_alone_is_unconfirmed_not_marginal():
+    """Default and 2 ns disagree, 1 ns cannot finish: the coarse run is the likely culprit, so the condition is
+    unconfirmed. Only 2 ns and 1 ns disagreeing make it marginal."""
+    lo = dict(i_op=1e-5, i_end=1e-6, i_prev=1e-6, nodes={"x": (0.5, 0.3)}, confirmed=True)
+    hi = dict(lo, i_end=1e-5, nodes={"x": (0.5, 0.5)})
+    mid = dict(lo, i_end=5e-6, nodes={"x": (0.5, 0.4)})
+    for third, want in (((None, "timeout"), "unconfirmed"), ((dict(mid), None), "undetermined")):
+        def fake(tb, corner, temps, vscale, ramp, settle, timeout, schedule, tmax=None):
+            return {t: {None: (dict(lo), None), 2e-9: (dict(hi), None), 1e-9: third}[tmax] for t in temps}
+        real, sim.startup_corner = sim.startup_corner, fake
+        try:
+            (r, e), = sim.startup_checked(None, "tt", [27]).values()
+        finally:
+            sim.startup_corner = real
+        assert r is None and e.startswith(want), (want, e)
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

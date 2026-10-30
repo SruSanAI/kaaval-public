@@ -487,8 +487,12 @@ def _same(a, b, vtol=0.02, itol=0.05):
 # DAC) can need longer than any review can wait at 2 ns: on ttsky25b SAR_ADC every 2 ns and 1 ns run timed out, one
 # group after another, for 12.6 hours. After the first fine run that times out, the cell's other conditions are not
 # tried at fine steps either; they report "unconfirmed", which is a gap in coverage, not a finding.
-# Offline tools (the landing page's figures) are not waiting on a reviewer and set a larger one.
+# Offline tools (the landing page's figures) are not waiting on a reviewer and set a larger one. Conditions whose
+# default-step result looks like a failure (a finding in the making) are checked first and on their own, larger budget:
+# passing slow-ramp cases must not spend the time a real failure needs (our kick-started reference stays off when
+# 3.3 V leads by 1 ms, but at 2 ns a 1 ms ramp is a million steps, and earlier passes had used the 300 s).
 FINE_BUDGET = 300.0
+SUSPECT_BUDGET = 900.0
 
 
 def budget(seconds=None):
@@ -496,13 +500,15 @@ def budget(seconds=None):
     return {"left": float(FINE_BUDGET if seconds is None else seconds), "timed_out": None}
 
 
-def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, fine=None):
+def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, fine=None,
+                    coarse=None):
     """startup_corner, with every result confirmed against a finer time step. A power-up from 0 V can land in different
     states depending on the integrator's step (a circuit with several states and nothing choosing between them); a
     result counts only when two successive steps of the ladder STEPS agree, and records the step (r["tmax"]). When the
     2 ns and 1 ns runs both complete and disagree, the condition reports an error naming the values seen: undetermined,
     never a pass or a fail. When the fine steps could not be run (timed out, or the shared budget `fine`
-    from budget() was spent) the condition reports "unconfirmed": not checked, never a finding."""
+    from budget() was spent) the condition reports "unconfirmed": not checked, never a finding. `coarse` is the
+    default-step result when the caller already has it (startup_corner's {temp: (result, err)})."""
     fine = budget() if fine is None else fine
     stop = _sched_end(ramp, schedule) + settle
     seen = {t: [] for t in temps}
@@ -516,7 +522,10 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
         if level is not None and lim < 1:
             break
         t0 = time.time()
-        res = startup_corner(tb, corner, todo, vscale, ramp, settle, lim, schedule, tmax=tmax)
+        if level is None and coarse is not None:
+            res = coarse
+        else:
+            res = startup_corner(tb, corner, todo, vscale, ramp, settle, lim, schedule, tmax=tmax)
         if level is not None:
             fine["left"] -= time.time() - t0
             if any(res.get(t, (None, ""))[1] == "timeout" for t in todo):

@@ -257,6 +257,18 @@ OUT = re.compile(r"(?i)^(v?out\w*|\w*_out|vref\w*|\w*ref|v?bgr\w*|iout\w*|ua\[?\
 CTL = re.compile(r"(?i)^(ena?|enable\w*|en_\w+|\w*_en|rst\w*|reset\w*|pd|pwr_?dn|pdn)$")
 
 
+STDCELL = re.compile(r"(?i)\bsky130_fd_sc_\w+")
+
+
+def digital_only(netlist):
+    """A cell built only from standard cells (flip-flops, gates, buffers) and no transistors of its own: a digital block.
+    Its power-up state is set by its reset, and a flip-flop has two states by design, so an analog power-up test says
+    nothing about it (and on a whole SAR controller costs most of a review). Any transistor, or any instance that is
+    not a standard cell (a sub-circuit of the project's own), keeps the cell analog."""
+    inst = [l for l in (netlist or "").splitlines() if re.match(r"(?i)^\s*x", l)]
+    return bool(inst) and all(STDCELL.search(l) and "sky130_fd_pr__" not in l for l in inst)
+
+
 THICK = re.compile(r"(?i)g5v0d10v5|g5v0d16v0|_05v0|sky130_fd_sc_hvl")
 
 
@@ -295,6 +307,10 @@ def _rules(ws, log, max_cells=20):
         sup = [p for p in c["ports"] if SUP.match(p)]
         gnd = [p for p in c["ports"] if GND.match(p)]
         if not sup or not gnd:
+            continue
+        if digital_only(c.get("netlist")):
+            log("plan", f"rules: {c['cell']} not powered up: standard cells only, a digital block (its reset sets its "
+                        f"power-up state)")
             continue
         volts = {p: rail_volts(p, c.get("netlist")) for p in sup}
         guess = "; ".join(f"{p} {v:g} V ({why})" for p, (v, why) in volts.items())

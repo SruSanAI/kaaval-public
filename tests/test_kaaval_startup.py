@@ -102,6 +102,33 @@ def test_coarse_disagreement_alone_is_unconfirmed_not_marginal():
             sim.startup_corner = real
         assert r is None and e.startswith(want), (want, e)
 
+
+def test_suspect_conditions_are_confirmed_first_on_their_own_budget():
+    """A default-step result that looks like a failure gets its fine-step check before any passing condition, and on
+    the suspect budget: passes that use up the shared budget cannot leave a real failure unconfirmed."""
+    from kaaval_engine import plan as P
+    ok = dict(i_op=1e-5, i_end=1e-5, i_prev=1e-5, nodes={"x": (0.5, 0.5)})
+    dead = dict(ok, i_end=1e-10, i_prev=1e-10)
+    calls = []
+
+    def fake(tb, corner, temps, vscale, ramp, settle, timeout, schedule, tmax=None):
+        calls.append((corner, tmax))
+        if tmax is not None and corner != "ss":
+            return {t: (None, "timeout") for t in temps}       # passing groups are slow at fine steps
+        return {t: (dict(dead if corner == "ss" else ok), None) for t in temps}
+
+    real, sim.startup_corner = sim.startup_corner, fake
+    try:
+        got = P._checked_sweep(None, [(c, c, 1.0, None) for c in ("tt", "ff", "ss")], [27], 20e-6, 300e-6, 150,
+                               lambda key, coarse: any(P._odd(r) for r, e in coarse[key].values()))
+    finally:
+        sim.startup_corner = real
+    assert [c for c, tm in calls if tm is None] == ["tt", "ff", "ss"]
+    assert [c for c, tm in calls if tm is not None][0] == "ss", calls
+    (r, e), = got["ss"].values()
+    assert e is None and r["tmax"] == 2e-9, e                    # the failure is confirmed
+    assert all(got[c][27][1].startswith("unconfirmed") for c in ("tt", "ff"))
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

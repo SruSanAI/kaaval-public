@@ -32,7 +32,7 @@ choose WHAT to test but cannot inject simulator commands.
     errors = validate(plan, root)          # [] when the plan can run
     result = run(plan, root)               # findings + per-condition results
 """
-import os, re
+import os, re, time
 
 from kaaval_engine import checks, sim, spice_cells, vcd
 from kaaval_engine import netlist as N
@@ -261,7 +261,16 @@ def compile_bench(plan, root):
 
 
 def run(plan, root, on_result=None):
-    """Run a validated plan. Returns {findings, results: [{corner, temp, vscale, error, i_op, i_end, nodes}], bench}."""
+    """Run a validated plan. Returns {findings, results: [{corner, temp, vscale, error, i_op, i_end, nodes}], bench,
+    seconds}: the wall time is kept so a review can say where its time went."""
+    t0 = time.time()
+    r = _run(plan, root, on_result)
+    if r.get("ok"):
+        r["seconds"] = round(time.time() - t0, 1)
+    return r
+
+
+def _run(plan, root, on_result=None):
     errs = validate(plan, root)
     if errs:
         return dict(ok=False, errors=errs)
@@ -315,30 +324,36 @@ def run(plan, root, on_result=None):
         return dict(ok=True, findings=checks.overstress(per, models), results=rows, bench=bench,
                     devices=len([m for m in models.values() if checks.rating(m)]))
     if plan["kind"] == "sequence":
-        per = {}
-        meta = {}
-        fine = sim.budget()
+        meta, scheds = {}, {}
         for name, sched, m in cases(plan):
-            meta[name] = m
-            sw = {}
-            for c in corners:
-                for v in vscales:
-                    for t, r in sim.startup_checked(tb, c, temps, v, ramp=FAST, settle=300e-6, timeout=300,
-                                                   schedule=sched, fine=fine).items():
-                        sw[(c, t, v)] = r
-                        if on_result:
-                            on_result((name, c, t, v), *r)
-            per[name] = sw
+            meta[name], scheds[name] = m, sched
+        ref = next(iter(scheds))
+        groups = [((name, c, v), c, v, sched) for name, sched in scheds.items() for c in corners for v in vscales]
+
+        def suspect(key, coarse):
+            base = coarse.get((ref, key[1], key[2])) or {}
+            return any(_odd(r, (base.get(t) or (None,))[0] if key[0] != ref else None)
+                       for t, (r, e) in coarse[key].items())
+
+        got = _checked_sweep(tb, groups, temps, FAST, 300e-6, 300, suspect)
+        per = {name: {} for name in scheds}
+        for (name, c, v), res in got.items():
+            for t, r in res.items():
+                per[name][(c, t, v)] = r
+                if on_result:
+                    on_result((name, c, t, v), *r)
+        per = {name: dict(sorted(sw.items(), key=lambda x: (corners.index(x[0][0]), vscales.index(x[0][2]))))
+               for name, sw in per.items()}
         rows = [dict(case=name, corner=c, temp=t, vscale=v, error=e,
                      **({} if not r else dict(i_op=r["i_op"], i_end=r["i_end"], nodes=r["nodes"], state=checks.state(r))))
                 for name, sw in per.items() for (c, t, v), (r, e) in sw.items()]
         return dict(ok=True, findings=checks.sequence(per, meta), results=rows, bench=bench, cases=list(per))
+    got = _checked_sweep(tb, [((c, v), c, v, None) for c in corners for v in vscales], temps, 20e-6, 300e-6, 150,
+                         lambda key, coarse: any(_odd(r) for r, e in coarse[key].values()))
     sw = {}
-    fine = sim.budget()
     for c in corners:
         for v in vscales:
-            for t, r in sim.startup_checked(tb, c, temps, v, ramp=20e-6, settle=300e-6, timeout=150,
-                                            fine=fine).items():
+            for t, r in got[(c, v)].items():
                 sw[(c, t, v)] = r
                 if on_result:
                     on_result((c, t, v), *r)
@@ -347,6 +362,39 @@ def run(plan, root, on_result=None):
                                           confirmed=r.get("confirmed"), swing=r.get("swing"))))
             for (c, t, v), (r, e) in sw.items()]
     return dict(ok=True, findings=checks.startup(sw), results=rows, bench=bench)
+
+
+def _odd(r, ref=None, vtol=0.1):
+    """A default-step power-up that looks like a failure: dead, oscillating, resting away from its DC answer, or (in a
+    sequence) ending elsewhere than the reference case at the same condition. Only an ordering hint: every verdict
+    still comes from the fine-step check."""
+    if not r:
+        return False
+    if checks.state(r) in ("dead", "oscillates"):
+        return True
+    if any(a is not None and b is not None and abs(a - b) > vtol for a, b in r["nodes"].values()):
+        return True
+    if ref:
+        if checks.state(ref) != checks.state(r):
+            return True
+        return any(n in ref["nodes"] and b is not None and ref["nodes"][n][1] is not None and
+                   abs(b - ref["nodes"][n][1]) > vtol for n, (a, b) in r["nodes"].items())
+    return False
+
+
+def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):
+    """Power-ups of every group (key, corner, vscale, schedule), each confirmed by sim.startup_checked. All default-step
+    runs come first; then the groups whose default result looks like a failure (suspect(key, coarse)) take their
+    fine-step checks first, on their own budget (sim.SUSPECT_BUDGET), and the rest share sim.FINE_BUDGET. Returns
+    {key: {temp: (result, err)}}."""
+    coarse = {key: sim.startup_corner(tb, c, temps, v, ramp, settle, timeout, sched) for key, c, v, sched in groups}
+    sus, rest = sim.budget(sim.SUSPECT_BUDGET), sim.budget()
+    flag = {key: suspect(key, coarse) for key, *_ in groups}
+    out = {}
+    for key, c, v, sched in sorted(groups, key=lambda g: not flag[g[0]]):
+        out[key] = sim.startup_checked(tb, c, temps, v, ramp=ramp, settle=settle, timeout=timeout, schedule=sched,
+                                       fine=sus if flag[key] else rest, coarse=coarse[key])
+    return out
 
 
 def bench_deck(plan, root, corner, temp, vscale=1.0, case=None):

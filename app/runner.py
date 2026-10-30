@@ -136,7 +136,10 @@ def keep_plans(rid, lv, res, by):
         r = pr["result"] or {}
         k = len(kept)
         kept.append(dict(plan=pr["plan"], by=by, ok=r.get("ok"), errors=r.get("errors"), results=r.get("results") or [],
-                         findings=[f["rule"] for f in r.get("findings") or []]))
+                         findings=[f["rule"] for f in r.get("findings") or []], seconds=r.get("seconds")))
+        if r.get("seconds") is not None:
+            store.event(rid, "muse", f"{pr['plan']['cell']} ({pr['plan']['kind']}): {len(r.get('results') or [])} "
+                                     f"conditions in {r['seconds']:.0f} s")
         rows = r.get("results") or []
         unc = [x for x in rows if str(x.get("error") or "").startswith("unconfirmed")]
         nu += len(unc)

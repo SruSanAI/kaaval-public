@@ -487,12 +487,13 @@ def _same(a, b, vtol=0.02, itol=0.05):
 # DAC) can need longer than any review can wait at 2 ns: on ttsky25b SAR_ADC every 2 ns and 1 ns run timed out, one
 # group after another, for 12.6 hours. After the first fine run that times out, the cell's other conditions are not
 # tried at fine steps either; they report "unconfirmed", which is a gap in coverage, not a finding.
+# Offline tools (the landing page's figures) are not waiting on a reviewer and set a larger one.
 FINE_BUDGET = 300.0
 
 
-def budget(seconds=FINE_BUDGET):
+def budget(seconds=None):
     """A fine-step time budget to share between the startup_checked calls of one plan."""
-    return {"left": float(seconds), "timed_out": None}
+    return {"left": float(FINE_BUDGET if seconds is None else seconds), "timed_out": None}
 
 
 def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, fine=None):
@@ -824,6 +825,29 @@ def health():
     except (OSError, subprocess.TimeoutExpired):
         ver = None
     return dict(ngspice=ver, pdk="sky130" if os.path.exists(PDK_LIB) else None, ok=bool(ver and os.path.exists(PDK_LIB)))
+
+
+def powerup_deck(tb, corner, temp, vscale=1.0, ramp=20e-6, settle=300e-6, schedule=None, tmax=2e-9, nets=None):
+    """The power-up of startup_corner as one deck a designer can run: first the DC answer (the 'working bias' a finding
+    compares against), then the same power-up from 0 V (sources ramp, `schedule` sequences them, held for `settle`,
+    gear, maximum step `tmax`), printing each source's settled current and each named node at the end, and writing
+    the waveform to powerup.txt."""
+    sup = tb.supplies()
+    circ = _ramped(tb.circuit, ramp, vscale, sup, schedule)
+    end = _sched_end(ramp, schedule)
+    t2 = Testbench(sch=tb.sch, circuit=circ, analyses=tb.analyses,
+                   params=[p for p in tb.params if not re.match(r"(?i)^\s*\.ic\b", p)], options=tb.options)
+    nets = [n for n in (nets or output_nets(tb)) if "[" not in n][:8]
+    srcs = [s[0].lower() for s in sup]
+    stop = end + settle
+    vecs = " ".join([f"{s}#branch" for s in srcs] + [f"v({n})" for n in nets])
+    lines = ["echo DC analysis (the operating point the finding compares against):", "op", f"print {vecs}",
+             f"echo Power-up from 0 V: ramps end at {end * 1e6:.4g} us, held to {stop * 1e6:.4g} us:",
+             "option method=gear", f"tran {stop / 4000:.4g} {stop:.4g}" + (f" 0 {tmax:.4g}" if tmax else "")]
+    lines += [f"meas tran i_end_{s} avg {s}#branch from={stop - 0.1 * settle:.4g} to={stop:.4g}" for s in srcs]
+    lines += [f"meas tran v_end_{re.sub(r'[^A-Za-z0-9_]', '_', n)} find v({n}) at={stop:.4g}" for n in nets]
+    lines.append(f"wrdata powerup.txt {vecs}")
+    return deck(t2, corner, temp, 1.0, control="\n".join(lines))
 
 
 def powerup_wave(tb, corner, temp, vscale=1.0, ramp=20e-6, settle=300e-6, nets=None, points=400, schedule=None,

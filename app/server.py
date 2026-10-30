@@ -264,7 +264,7 @@ def api_evidence(rid, fid):
             ws = engine.upload(runner.design_files(root))
             store.set_live(rid, dict(lv, ws=ws))
         try:
-            d = engine.deck(ws, pr["plan"], corner, temp, vscale)
+            d = engine.deck(ws, pr["plan"], corner, temp, vscale, det.get("case"))
             deck, derr = d.get("deck"), d.get("error")
             break
         except engine.EngineError as e:
@@ -278,8 +278,11 @@ def api_evidence(rid, fid):
               f"finding.json  the finding, the test plan ({pr['plan'].get('kind')}) and all "
               f"{len(info['results'])} measured conditions\n"
               + (f"bench.sp      the testbench at {corner}, {temp} C, supply x{vscale:g}: the cell from your repository,\n"
-                 f"              the plan's supplies, loads and stimuli, with an operating-point analysis.\n"
-                 f"              Set the .lib line to your sky130A install, then: ngspice bench.sp\n" if deck else
+                 f"              the plan's supplies, loads and stimuli, "
+                 + ("then the DC answer and the same power-up from 0 V the engine ran\n"
+                    "              (settled currents and nodes printed at the end, waveform in powerup.txt).\n"
+                    if pr["plan"].get("kind") in ("powerup", "sequence") else "with an operating-point analysis.\n")
+                 + f"              Set the .lib line to your sky130A install, then: ngspice -b bench.sp\n" if deck else
                  f"bench.sp      not included: {derr}\n")
               + "\nThe engine never edits your design: the deck adds sources and loads around your cell.\n")
     buf = io.BytesIO()

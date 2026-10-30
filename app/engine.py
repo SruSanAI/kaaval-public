@@ -128,8 +128,8 @@ def health():
     return _post("health", {}, timeout=30)
 
 
-def deck(ws, p, corner, temp, vscale=1.0):
-    return _post("deck", {"ws": ws, "plan": p, "corner": corner, "temp": temp, "vscale": vscale})
+def deck(ws, p, corner, temp, vscale=1.0, case=None):
+    return _post("deck", {"ws": ws, "plan": p, "corner": corner, "temp": temp, "vscale": vscale, "case": case})
 
 
 def wave(ws, p, corner, temp, vscale, case=None):

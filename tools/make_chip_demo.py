@@ -12,9 +12,14 @@ import json, os, sys, tempfile, pathlib
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "tests"))
-from kaaval_engine import plan as P  # noqa: E402
+from kaaval_engine import plan as P, sim  # noqa: E402
 import test_kaaval_logic as L  # noqa: E402
 import test_kaaval_sequence as S  # noqa: E402
+
+
+# a figure is generated once, offline: give every power-up its fine-step check (slow 1 ms ramps at 2 ns take minutes),
+# so no case on the page is left unconfirmed by the live review's 300 s budget
+sim.FINE_BUDGET = 4 * 3600.0
 
 
 def scenario(pl, circuit_text, file_name):
@@ -23,6 +28,8 @@ def scenario(pl, circuit_text, file_name):
     pl = dict(pl, corners=["tt", "ss", "ff"], temps=[27], vscales=[1.0])
     r = P.run(pl, str(d))
     assert r["ok"], r
+    gaps = [x for x in r["results"] if x.get("error")]
+    assert not gaps, f"{len(gaps)} power-up(s) not checked, the page would show them as tested: {gaps[0]['error']}"
     rows = []
     for name, sched, meta in P.cases(pl):
         cells = {x["corner"]: dict(state=x.get("state"), i_end=x.get("i_end"), error=x.get("error"))

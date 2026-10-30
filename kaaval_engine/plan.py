@@ -349,16 +349,27 @@ def run(plan, root, on_result=None):
     return dict(ok=True, findings=checks.startup(sw), results=rows, bench=bench)
 
 
-def bench_deck(plan, root, corner, temp, vscale=1.0):
-    """The testbench a validated plan simulates, as one ngspice deck at one condition with an operating-point analysis:
-    the designer's cell from the repository, the plan's supplies, pad loads and stimuli. The PDK line names the
-    standard sky130 library (not this server's trimmed copy), so the deck runs on any machine with the open PDK."""
+def bench_deck(plan, root, corner, temp, vscale=1.0, case=None):
+    """The testbench a validated plan simulates, as one ngspice deck at one condition: the designer's cell from the
+    repository, the plan's supplies, pad loads and stimuli. A power-up or sequence test runs what the engine ran there,
+    the DC answer and then the power-up from 0 V (for a sequence, of the named case); the other kinds run the operating
+    point. The PDK line names the standard sky130 library (not this server's trimmed copy), so the deck runs on any
+    machine with the open PDK."""
     errs = validate(plan, root)
     if errs:
         return None, "; ".join(errs)
     tb = compile_bench(plan, root)
     tb.supplies = lambda: [(f"Vplan{i}", p, float(v)) for i, (p, v) in enumerate(plan["supplies"].items())]
-    text = sim.deck(tb, corner, int(temp), float(vscale))
+    if plan.get("kind") == "sequence":
+        cs = {n: s for n, s, _ in cases(plan)}
+        sched = cs.get(case) if case else next(iter(cs.values()))
+        if sched is None:
+            return None, f"no case {case!r} in this sequence test"
+        text = sim.powerup_deck(tb, corner, int(temp), float(vscale), ramp=FAST, schedule=sched)
+    elif plan.get("kind") == "powerup":
+        text = sim.powerup_deck(tb, corner, int(temp), float(vscale))
+    else:
+        text = sim.deck(tb, corner, int(temp), float(vscale))
     text = re.sub(r'^\.lib "[^"]*" (\w+)$', lambda m: "* point this at your sky130A install (volare / ciel)\n"
                   f'.lib "sky130A/libs.tech/ngspice/sky130.lib.spice" {m.group(1)}', text, count=1, flags=re.M)
     return text.replace(os.path.realpath(root) + os.sep, "").replace(root.rstrip(os.sep) + os.sep, ""), None

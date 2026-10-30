@@ -350,7 +350,7 @@ def deck():
     pl = d.get("plan")
     if not root or not isinstance(pl, dict) or d.get("corner") not in checks.CORNERS:
         return _bad("unknown workspace, plan or corner", 404)
-    text, e = kplan.bench_deck(pl, root, d["corner"], d.get("temp", 27), d.get("vscale", 1.0))
+    text, e = kplan.bench_deck(pl, root, d["corner"], d.get("temp", 27), d.get("vscale", 1.0), d.get("case"))
     return jsonify({"ok": not e, "error": e, "deck": text})
 
 

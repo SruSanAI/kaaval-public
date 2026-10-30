@@ -29,6 +29,32 @@ def test_bench_deck_is_portable_and_runs(tmp_path):
     assert abs(v - 0.9 * 0.9) < 0.01, out[-800:]
 
 
+BETA = """.subckt beta vdd vss
+XM1 n1 n1 vss vss sky130_fd_pr__nfet_01v8 L=2 W=4 nf=1 m=1
+XM2 n2 n1 s2 vss sky130_fd_pr__nfet_01v8 L=2 W=16 nf=1 m=1
+R1 s2 vss 20k
+XM3 n1 n2 vdd vdd sky130_fd_pr__pfet_01v8 L=2 W=8 nf=1 m=1
+XM4 n2 n2 vdd vdd sky130_fd_pr__pfet_01v8 L=2 W=8 nf=1 m=1
+.ends
+"""
+
+
+def test_powerup_deck_shows_the_dead_state_not_just_the_dc_answer(tmp_path):
+    """A 'wakes up dead' finding's deck must show both sides: the DC answer reports a working bias, the power-up from
+    0 V in the same deck settles at zero current (our beta-multiplier reference without a start-up device)."""
+    (tmp_path / "b.spice").write_text(BETA)
+    pl = dict(cell="b.spice#beta", kind="powerup", supplies={"vdd": 1.8}, grounds=["vss"], corners=["tt"], temps=[27],
+              vscales=[1.0])
+    text, err = P.bench_deck(pl, str(tmp_path), "tt", 27)
+    assert not err and "tran " in text and "\nop\n" in text, err
+    (tmp_path / "bench.sp").write_text(text.replace("sky130A/libs.tech/ngspice/sky130.lib.spice", PDK_LIB))
+    out = subprocess.run(["ngspice", "-b", "bench.sp"], cwd=tmp_path, capture_output=True, text=True, timeout=300).stdout
+    i_dc = abs(float(re.search(r"vplan0#branch\s*=\s*([-+0-9.eE]+)", out).group(1)))
+    i_end = abs(float(re.search(r"i_end_vplan0\s*=\s*([-+0-9.eE]+)", out).group(1)))
+    assert i_dc > 5e-6 and i_end < 1e-8, (i_dc, i_end, out[-800:])
+    assert (tmp_path / "powerup.txt").exists()
+
+
 def test_bench_deck_refuses_a_bad_plan(tmp_path):
     (tmp_path / "r.spice").write_text(REF)
     text, err = P.bench_deck(dict(PLAN, cell="nope.spice#ref"), str(tmp_path), "tt", 27)

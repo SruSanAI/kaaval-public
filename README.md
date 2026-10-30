@@ -39,10 +39,12 @@ not foundry sign-off**; one measured run is not a guarantee.
    the job of every pin with its evidence, and writes test plans as JSON (a strict schema). Plans are data: the engine checks every cell, port and value before anything
    runs, and refuses raw SPICE. Without a Muse Spark key, a labelled no-model baseline powers up every circuit.
 3. **Prove.** The engine builds every deck itself and simulates at all 45 conditions. A finding is shown only after
-   its own confirmation (second states re-solved, oscillations re-run with a stiffer integrator). Every power-up is
-   confirmed at a fine time step: the default step must agree with a 2 ns maximum step, or 2 ns with 1 ns (two coarse
-   steps can agree on a wrong state). When none agree, Kaaval reports a **marginal start-up** (the state reached
-   depends on numerical detail, so on silicon it depends on noise and ramp) instead of a pass or a fail.
+   its own confirmation (second states re-solved, oscillations re-run with a stiffer integrator). A power-up result is
+   accepted only at a fine time step: the default step must agree with a 2 ns maximum step, or 2 ns with 1 ns (two
+   coarse steps can agree on a wrong state). When completed runs disagree, Kaaval reports a **marginal start-up** (the
+   state reached depends on numerical detail, so on silicon it depends on noise and ramp) instead of a pass or a fail.
+   Each test has 300 s for the fine-step runs; on a cell too large for that (a whole SAR ADC with its DAC) the
+   remaining conditions are **unconfirmed**: shown as not tested, counted on the review, never a pass or a finding.
 4. **Fix.** A proposal, never a merge: a sizing fix is re-simulated at all 45 conditions before it is shown.
 
 The review page shows the evidence behind each finding: the failing device on its own schematic sheet, the

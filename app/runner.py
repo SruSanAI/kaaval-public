@@ -131,7 +131,7 @@ class Live:
 
 def keep_plans(rid, lv, res, by):
     """Store each planned test's results for the bench's evidence views, and its findings as findings."""
-    kept, nf = list(lv.d.get("plan_results") or []), 0
+    kept, nf, nu = list(lv.d.get("plan_results") or []), 0, 0
     for pr in res["plans"]:
         r = pr["result"] or {}
         k = len(kept)
@@ -139,6 +139,7 @@ def keep_plans(rid, lv, res, by):
                          findings=[f["rule"] for f in r.get("findings") or []]))
         rows = r.get("results") or []
         unc = [x for x in rows if str(x.get("error") or "").startswith("unconfirmed")]
+        nu += len(unc)
         if unc:
             store.event(rid, "muse", f"{pr['plan']['cell']} ({pr['plan']['kind']}): {len(unc)}/{len(rows)} conditions "
                                      f"not checked against a finer time step: {unc[0]['error'].split(', so')[0][13:]}. "
@@ -149,8 +150,14 @@ def keep_plans(rid, lv, res, by):
                                         location=f"{pr['plan']['cell']} · " + ("test planned by Muse Spark" if by == "muse"
                                                                                else "baseline power-up (no model)"),
                                         device=f.get("device", ""), detail=dict(f, plan=pr["plan"], planner=by, k=k)))
-    lv.set(plan_results=kept)
+    lv.set(plan_results=kept, unconfirmed=lv.d.get("unconfirmed", 0) + nu)
     return nf
+
+
+def unc_note(lv):
+    """The coverage gap of the planned tests, for the stage line: conditions whose fine-step check could not run."""
+    n = lv.d.get("unconfirmed") or 0
+    return f" · {n} condition(s) not confirmed (not tested)" if n else ""
 
 
 def project_docs(root):
@@ -423,7 +430,7 @@ def review(rid, src, root=None):
             try:
                 res = planner.review("rules", ws, "", "")
                 nf = keep_plans(rid, lv, res, "rules")
-                lv.stage("muse", "done", f"no model · {len(res['plans'])} cell(s) powered up · {nf} finding(s)")
+                lv.stage("muse", "done", f"no model · {len(res['plans'])} cell(s) powered up · {nf} finding(s)" + unc_note(lv))
                 store.event(rid, "muse", f"Muse Spark is not connected on this server. As a baseline, every cell with "
                                          f"named supply and ground pins was powered up at 30 conditions "
                                          f"({len(res['plans'])} cell(s), {nf} finding(s)); loop stability needs the "
@@ -444,7 +451,7 @@ def review(rid, src, root=None):
                 res = planner.review("muse", ws, project_docs(root), floor_note(tbs, locals().get("tbr")), log)
                 nf = keep_plans(rid, lv, res, "muse")
                 lv.set(blocks=res["blocks"])
-                lv.stage("muse", "done", f"{len(res['blocks'])} blocks · {len(res['plans'])} test(s) · {nf} finding(s)")
+                lv.stage("muse", "done", f"{len(res['blocks'])} blocks · {len(res['plans'])} test(s) · {nf} finding(s)" + unc_note(lv))
             except (planner.PlannerError, engine.EngineError) as e:
                 lv.stage("muse", "error", "planner failed")
                 store.event(rid, "muse", f"Muse Spark review did not complete: {e}", "error")

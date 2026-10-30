@@ -330,10 +330,13 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
     if (!pr) { evid.hidden = true; $('.pvt').hidden = false; return }
     evid.hidden = false; $('.pvt').hidden = true;
     const rows = (pr.results || []).filter(r => !r.error);
+    // conditions the fine-step check could not reach are a gap in coverage: said next to the grid, never hidden
+    const unc = (pr.results || []).filter(r => /^unconfirmed/.test(r.error || '')).length;
+    const uncNote = () => { if (unc) $('#ev-hint').textContent += ` · ${unc} of ${pr.results.length} conditions not confirmed at a fine time step (grey: not tested)` };
     if (pr.plan.kind === 'sequence') {
       $('#ev-title').textContent = 'Power-up sequence · every order the chip can take';
       $('#ev-hint').textContent = `${pr.plan.cell} · rows: how the rails, enables and resets arrive · click a cell to simulate it`;
-      seqGrid(pr.results, k, f);
+      seqGrid(pr.results, k, f); uncNote();
     } else if (pr.plan.kind === 'stability') {
       $('#ev-title').textContent = 'Loop gain · Bode'; $('#ev-hint').textContent = `${pr.plan.cell} · cut on ${pr.plan.break && pr.plan.break.net} · click a condition`;
       evGrid(pr.results, r => r.error ? 'na' : r.positive_dc || (r.pm != null && r.pm < 0) ? 'bad' : r.pm != null && r.pm < 45 ? 'warn' : 'ok',
@@ -343,7 +346,7 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       $('#ev-title').textContent = 'Power-up · waveform'; $('#ev-hint').textContent = `${pr.plan.cell} · from 0 V · click a condition to simulate it`;
       // a condition fails if it stays off, settles in a confirmed second state, or keeps swinging
       const bad = r => (r.i_end != null && r.i_end < 0.2 * r.i_op) || r.confirmed || (r.swing && Object.keys(r.swing).length);
-      evGrid(pr.results, r => r.error ? 'na' : bad(r) ? 'bad' : 'ok', () => '', r => wavePlot(k, r));
+      evGrid(pr.results, r => r.error ? 'na' : bad(r) ? 'bad' : 'ok', () => '', r => wavePlot(k, r)); uncNote();
       const w = f.detail && f.detail.worst, at = w && rows.find(r => r.corner === w[0] && r.temp === w[1] && r.vscale === w[2]);
       const first = at || rows.find(bad) || rows[0];
       if (first) { wavePlot(k, first); const b = $(`#ev-lat [data-k="${first.corner}|${first.temp}|${first.vscale}"]`); b && b.classList.add('sel') }

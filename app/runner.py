@@ -137,6 +137,12 @@ def keep_plans(rid, lv, res, by):
         k = len(kept)
         kept.append(dict(plan=pr["plan"], by=by, ok=r.get("ok"), errors=r.get("errors"), results=r.get("results") or [],
                          findings=[f["rule"] for f in r.get("findings") or []]))
+        rows = r.get("results") or []
+        unc = [x for x in rows if str(x.get("error") or "").startswith("unconfirmed")]
+        if unc:
+            store.event(rid, "muse", f"{pr['plan']['cell']} ({pr['plan']['kind']}): {len(unc)}/{len(rows)} conditions "
+                                     f"not checked against a finer time step: {unc[0]['error'].split(', so')[0][13:]}. "
+                                     f"They count as not tested, not as findings.", "warn")
         for f in r.get("findings") or []:
             nf += 1
             store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"], kind="risk", title=f["message"],

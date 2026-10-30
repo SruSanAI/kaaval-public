@@ -48,7 +48,9 @@ not foundry sign-off**; one measured run is not a guarantee.
 The review page shows the evidence behind each finding: the failing device on its own schematic sheet, the
 conditions where it fails, a **sequence matrix** (every power-up order against every condition, click a cell for its
 waveform), the **power-up waveform** of any condition (simulated on click), and the **Bode plot** of a
-loop at every condition.
+loop at every condition. Each finding of a planned test also downloads as a zip a designer can check without Kaaval:
+the finding, the test plan, every condition measured, and the testbench at the worst condition as a plain ngspice
+deck (your cell unchanged, the standard sky130 `.lib` line, no server paths).
 
 ## Kaaval Zoom: the whole chip, down to each transistor
 

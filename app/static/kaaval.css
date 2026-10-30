@@ -246,6 +246,8 @@ svg.sch .halo{fill:color-mix(in oklch,var(--accent) 14%,transparent);stroke:var(
 .card .dv{margin-left:auto;font:500 0.75rem var(--mono);color:var(--text-2)}
 .card .tt{margin-top:8px;color:var(--text-1);font-size:0.8125rem;line-height:20px}
 .card .loc{margin-top:4px;font:400 0.6875rem/16px var(--mono);color:var(--text-3);word-break:break-all}
+.card .evdl{display:inline-block;margin-top:6px;font:500 0.6875rem/16px var(--mono);color:var(--text-2);text-decoration:underline;text-underline-offset:2px}
+.card .evdl:hover{color:var(--text)}
 .composer{flex:none;border-top:1px solid var(--border-subtle);padding:12px}
 .composer .box{border:1px solid var(--border);border-radius:10px;background:var(--bg-1);padding:8px 10px;display:flex;gap:8px;align-items:flex-end}
 .composer textarea{flex:1;min-width:0;border:0;outline:0;resize:none;background:transparent;color:var(--text-1);font:400 0.8125rem/20px var(--sans);height:40px}

@@ -343,6 +343,17 @@ def wave():
     return jsonify({"ok": not e, "error": e, "wave": r})
 
 
+@bp.post("/deck")
+def deck():
+    d = request.get_json(silent=True) or {}
+    root = _ws(d)
+    pl = d.get("plan")
+    if not root or not isinstance(pl, dict) or d.get("corner") not in checks.CORNERS:
+        return _bad("unknown workspace, plan or corner", 404)
+    text, e = kplan.bench_deck(pl, root, d["corner"], d.get("temp", 27), d.get("vscale", 1.0))
+    return jsonify({"ok": not e, "error": e, "deck": text})
+
+
 @bp.post("/plan")
 def run_plan():
     """Validate and run one test plan (kaaval_engine.plan): data only, compiled by us. A rejected plan returns its

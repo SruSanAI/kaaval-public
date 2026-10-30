@@ -209,6 +209,9 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       + `The stack has no headroom at this condition: it needs re-biasing, or an operating range that excludes it.</div>`
       + `<details><summary>${(x.tried || []).length} attempts</summary>${(x.tried || []).map(t => `<div class="mono">×${t[0]} · current shift ${(t[1] * 100).toFixed(1)} % · ${esc(t[2])}</div>`).join('')}</details></div>`;
   };
+  // a planned test's finding can be checked without Kaaval: the plan, every measured condition and an ngspice deck
+  const evHtml = f => f.detail && Number.isInteger(f.detail.k) ?
+    `<a class="evdl" href="/api/runs/${RID}/findings/${f.id}/evidence" download>Download evidence (plan, results, ngspice deck)</a>` : '';
   const card = f => {
     const d = document.createElement('div'); d.className = 'card'; d.tabIndex = 0;
     const pill = f.kind === 'trap' ? `<span class="pill trap">${ICON.trap}Simulation trap</span>` :
@@ -227,8 +230,8 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       `<span><i>${i ? 'after power-up' : 'DC analysis'}</i>${(x.v != null ? x.v.toFixed(3) + ' V · ' : '')}${(x.i * 1e6).toFixed(1)} µA</span>`).join('')}</div>` : '';
     const by = f.detail && f.detail.planner === 'muse' ? '<div class="by">Test written by Muse Spark · run by the engine</div>' : '';
     const simDev = (f.detail && f.detail.device) || '', dv = simDev.split('.').length > 2 ? simDev.split('.').slice(1).join('.') : (f.device || '');
-    d.innerHTML = `<div class="h">${pill}<span class="dv">${esc(dv)}</span></div>${plain}${states}<div class="tt">${esc(f.title)}</div>${by}${corr}<div class="loc">${esc(f.location)}</div><div class="fx">${fixHtml(f)}</div>`;
-    d.onclick = e => { const b = e.target.closest('[data-fix]'); if (b) { e.stopPropagation(); askFix(b.dataset.fix); return } if (e.target.closest('details')) return; select(f, d) };
+    d.innerHTML = `<div class="h">${pill}<span class="dv">${esc(dv)}</span></div>${plain}${states}<div class="tt">${esc(f.title)}</div>${by}${corr}<div class="loc">${esc(f.location)}</div><div class="fx">${fixHtml(f)}</div>${evHtml(f)}`;
+    d.onclick = e => { if (e.target.closest('.evdl')) return; const b = e.target.closest('[data-fix]'); if (b) { e.stopPropagation(); askFix(b.dataset.fix); return } if (e.target.closest('details')) return; select(f, d) };
     d.onkeydown = e => { if (e.key === 'Enter') select(f, d) };
     cards[f.id] = {el: d, key: JSON.stringify(f.fix || null)};
     flist.appendChild(d); if (G) G.from(d, {y: 8, opacity: 0, duration: 0.4, ease: 'power2.out'});

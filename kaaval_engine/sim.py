@@ -9,7 +9,7 @@ that reports every transistor's operating point (BSIM4 `show`), so the same deck
     tb = sim.Testbench.from_sch("xschem/tb_x.sch")
     ops = sim.op_points(tb, corner="ss", temp=-40, vscale=0.9)
 """
-import os, re, shutil, subprocess, tempfile
+import os, re, shutil, subprocess, tempfile, time
 from dataclasses import dataclass, field
 
 from kaaval_engine import netlist as N
@@ -483,11 +483,26 @@ def _same(a, b, vtol=0.02, itol=0.05):
                if n in b["nodes"] and a["nodes"][n][1] is not None and b["nodes"][n][1] is not None)
 
 
-def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None):
+# seconds a plan may spend on fine-step confirmation, shared by all its conditions. A large cell (a whole SAR with its
+# DAC) can need longer than any review can wait at 2 ns: on ttsky25b SAR_ADC every 2 ns and 1 ns run timed out, one
+# group after another, for 12.6 hours. After the first fine run that times out, the cell's other conditions are not
+# tried at fine steps either; they report "unconfirmed", which is a gap in coverage, not a finding.
+FINE_BUDGET = 300.0
+
+
+def budget(seconds=FINE_BUDGET):
+    """A fine-step time budget to share between the startup_checked calls of one plan."""
+    return {"left": float(seconds), "timed_out": None}
+
+
+def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, fine=None):
     """startup_corner, with every result confirmed against a finer time step. A power-up from 0 V can land in different
     states depending on the integrator's step (a circuit with several states and nothing choosing between them); a
-    result counts only when two successive steps of the ladder STEPS agree, and records the step (r["tmax"]). When no
-    two agree the condition reports an error naming the values seen: undetermined, never a pass or a fail."""
+    result counts only when two successive steps of the ladder STEPS agree, and records the step (r["tmax"]). When two
+    completed steps disagree and no later pair agrees, the condition reports an error naming the values seen:
+    undetermined, never a pass or a fail. When the fine steps could not be run (timed out, or the shared budget `fine`
+    from budget() was spent) the condition reports "unconfirmed": not checked, never a finding."""
+    fine = budget() if fine is None else fine
     stop = _sched_end(ramp, schedule) + settle
     seen = {t: [] for t in temps}
     final = {}
@@ -496,8 +511,15 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
         if not todo:
             break
         tmax = level
-        res = startup_corner(tb, corner, todo, vscale, ramp, settle, timeout * (1 if level is None else 4), schedule,
-                             tmax=tmax)
+        lim = timeout if level is None else min(timeout * 4, fine["left"])
+        if level is not None and lim < 1:
+            break
+        t0 = time.time()
+        res = startup_corner(tb, corner, todo, vscale, ramp, settle, lim, schedule, tmax=tmax)
+        if level is not None:
+            fine["left"] -= time.time() - t0
+            if any(res.get(t, (None, ""))[1] == "timeout" for t in todo):
+                fine["left"], fine["timed_out"] = 0.0, fine["timed_out"] or f"{fmt_step(tmax)} at {corner}"
         nxt = []
         for t in todo:
             r, e = res.get(t, (None, "did not complete"))
@@ -506,13 +528,25 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
             if prev and not prev[1] and not e and _same(prev[0], r):
                 final[t] = (dict(r, tmax=tmax, step_check=f"agrees at {fmt_step(prev[2] or stop / 4000)} and "
                                                           f"{fmt_step(tmax)}"), None)
+            elif e == "timeout":
+                continue
             else:
                 nxt.append(t)
         todo = nxt
-    for t in todo:
+    for t in temps:
+        if t in final:
+            continue
         vals = ", ".join(("error" if e else f"{r['i_end'] * 1e6:.3g} \u00b5A") + f" at {fmt_step(tm or stop / 4000)}"
                          for r, e, tm in seen[t])
-        final[t] = (None, f"undetermined: the power-up result changes with the simulator's time step ({vals})")
+        done = [r for r, e, _ in seen[t] if not e and r]
+        if not done:
+            final[t] = (None, seen[t][-1][1] if seen[t] else "did not complete")
+        elif any(not _same(a, b) for a, b in zip(done, done[1:])):
+            final[t] = (None, f"undetermined: the power-up result changes with the simulator's time step ({vals})")
+        else:
+            why = (f"the {fine['timed_out']} run timed out" if fine["timed_out"]
+                   else "the fine-step time budget was spent")
+            final[t] = (None, f"unconfirmed: {why}, so the result was not checked against a finer step ({vals})")
     return final
 
 

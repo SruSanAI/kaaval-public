@@ -317,13 +317,14 @@ def run(plan, root, on_result=None):
     if plan["kind"] == "sequence":
         per = {}
         meta = {}
+        fine = sim.budget()
         for name, sched, m in cases(plan):
             meta[name] = m
             sw = {}
             for c in corners:
                 for v in vscales:
                     for t, r in sim.startup_checked(tb, c, temps, v, ramp=FAST, settle=300e-6, timeout=300,
-                                                   schedule=sched).items():
+                                                   schedule=sched, fine=fine).items():
                         sw[(c, t, v)] = r
                         if on_result:
                             on_result((name, c, t, v), *r)
@@ -333,9 +334,11 @@ def run(plan, root, on_result=None):
                 for name, sw in per.items() for (c, t, v), (r, e) in sw.items()]
         return dict(ok=True, findings=checks.sequence(per, meta), results=rows, bench=bench, cases=list(per))
     sw = {}
+    fine = sim.budget()
     for c in corners:
         for v in vscales:
-            for t, r in sim.startup_checked(tb, c, temps, v, ramp=20e-6, settle=300e-6, timeout=150).items():
+            for t, r in sim.startup_checked(tb, c, temps, v, ramp=20e-6, settle=300e-6, timeout=150,
+                                            fine=fine).items():
                 sw[(c, t, v)] = r
                 if on_result:
                     on_result((c, t, v), *r)
@@ -344,6 +347,21 @@ def run(plan, root, on_result=None):
                                           confirmed=r.get("confirmed"), swing=r.get("swing"))))
             for (c, t, v), (r, e) in sw.items()]
     return dict(ok=True, findings=checks.startup(sw), results=rows, bench=bench)
+
+
+def bench_deck(plan, root, corner, temp, vscale=1.0):
+    """The testbench a validated plan simulates, as one ngspice deck at one condition with an operating-point analysis:
+    the designer's cell from the repository, the plan's supplies, pad loads and stimuli. The PDK line names the
+    standard sky130 library (not this server's trimmed copy), so the deck runs on any machine with the open PDK."""
+    errs = validate(plan, root)
+    if errs:
+        return None, "; ".join(errs)
+    tb = compile_bench(plan, root)
+    tb.supplies = lambda: [(f"Vplan{i}", p, float(v)) for i, (p, v) in enumerate(plan["supplies"].items())]
+    text = sim.deck(tb, corner, int(temp), float(vscale))
+    text = re.sub(r'^\.lib "[^"]*" (\w+)$', lambda m: "* point this at your sky130A install (volare / ciel)\n"
+                  f'.lib "sky130A/libs.tech/ngspice/sky130.lib.spice" {m.group(1)}', text, count=1, flags=re.M)
+    return text.replace(os.path.realpath(root) + os.sep, "").replace(root.rstrip(os.sep) + os.sep, ""), None
 
 
 def wave(plan, root, corner, temp, vscale=1.0, case=None):

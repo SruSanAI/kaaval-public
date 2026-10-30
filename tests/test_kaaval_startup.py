@@ -61,6 +61,30 @@ def test_step_ladder_agreement_and_marginal_finding():
                                                  "time step (47.9 µA at 80 ns, 83.3 µA at 2 ns, 81.4 µA at 1 ns)")})
     assert [x["rule"] for x in f] == ["analog/marginal_startup"] and "83.3 µA at 2 ns" in f[0]["message"]
 
+
+def test_fine_step_budget_reports_unconfirmed_not_marginal():
+    """A cell too large for the fine steps (the 2 ns run times out) is "unconfirmed": after the first timeout no other
+    condition of the plan tries a fine step, and no finding is made from it."""
+    calls = []
+    ok = dict(i_op=1e-5, i_end=1e-5, i_prev=1e-5, nodes={"x": (0.5, 0.5)}, confirmed=True)
+
+    def fake(tb, corner, temps, vscale, ramp, settle, timeout, schedule, tmax=None):
+        calls.append(tmax)
+        return {t: ((dict(ok), None) if tmax is None else (None, "timeout")) for t in temps}
+
+    real, sim.startup_corner = sim.startup_corner, fake
+    try:
+        fine = sim.budget()
+        a = sim.startup_checked(None, "tt", [27, 125], fine=fine)
+        b = sim.startup_checked(None, "ss", [27], fine=fine)
+    finally:
+        sim.startup_corner = real
+    assert calls == [None, 2e-9, None], calls
+    errs = [e for _, e in list(a.values()) + list(b.values())]
+    assert all(e.startswith("unconfirmed") for e in errs), errs
+    assert "2 ns at tt run timed out" in errs[2]
+    assert checks.startup({("tt", 27, 1.0): (None, errs[0])}) == []
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

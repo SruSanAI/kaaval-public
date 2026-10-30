@@ -2,9 +2,9 @@
 
     python -m app.server            (then open http://127.0.0.1:5110; KAAVAL_PORT changes the port)
 """
-import hmac, os, re, tempfile, threading, time, uuid
+import hmac, io, json, os, re, tempfile, threading, time, uuid, zipfile
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 from guard import sch_svg
 from kaaval_engine import chip as kchip
@@ -232,6 +232,65 @@ def api_wave(rid):
     except engine.EngineError as e:
         return jsonify(ok=False, error=str(e)), 502
     return jsonify(r)
+
+
+def _worst(w):
+    """corner, temperature and supply scale from a finding's worst condition, whatever the test kind put around them."""
+    w = list(w or [])
+    c = next((x for x in w if x in ("tt", "ss", "ff", "sf", "fs")), "tt")
+    rest = w[w.index(c) + 1:] if c in w else []
+    nums = [x for x in rest if isinstance(x, (int, float)) and not isinstance(x, bool)]
+    return c, int(nums[0]) if nums else 27, float(nums[1]) if len(nums) > 1 else 1.0
+
+
+@app.get("/api/runs/<rid>/findings/<fid>/evidence")
+def api_evidence(rid, fid):
+    """Everything behind one planned-test finding, as a zip anyone can check without Kaaval: the finding, the test
+    plan, every condition the engine measured, and the testbench at the worst condition as a plain ngspice deck."""
+    r, f, lv = store.run(rid), store.finding(rid, fid), store.live(rid) or {}
+    det = (f or {}).get("detail") or {}
+    plans = lv.get("plan_results") or []
+    if not r or not f or not isinstance(det.get("k"), int) or det["k"] >= len(plans):
+        abort(404)
+    pr = plans[det["k"]]
+    corner, temp, vscale = _worst(det.get("worst"))
+    deck, derr = None, "the engine workspace is gone"
+    for ws in (lv.get("ws"), "renew"):
+        if ws == "renew":
+            # the engine's workspaces expire; this run's copy of the repository is still on disk
+            root = os.path.join(runner.WORK, rid)
+            if not os.path.isdir(root):
+                break
+            ws = engine.upload(runner.design_files(root))
+            store.set_live(rid, dict(lv, ws=ws))
+        try:
+            d = engine.deck(ws, pr["plan"], corner, temp, vscale)
+            deck, derr = d.get("deck"), d.get("error")
+            break
+        except engine.EngineError as e:
+            deck, derr = None, str(e)
+    info = dict(repository=r.get("repo"), commit=r.get("commit_sha"), finding=dict(rule=f["rule"],
+                severity=f["severity"], message=det.get("message") or f.get("title"), worst=det.get("worst"),
+                n_bad=det.get("n_bad"), n=det.get("n"), conds=det.get("conds")),
+                planned_by=pr.get("by"), plan=pr["plan"], results=pr.get("results") or [],
+                engine=engine.health(), deck=dict(corner=corner, temp=temp, vscale=vscale, error=derr))
+    readme = (f"Kaaval evidence: {f['rule']}\n\n{info['finding']['message']}\n\n"
+              f"finding.json  the finding, the test plan ({pr['plan'].get('kind')}) and all "
+              f"{len(info['results'])} measured conditions\n"
+              + (f"bench.sp      the testbench at {corner}, {temp} C, supply x{vscale:g}: the cell from your repository,\n"
+                 f"              the plan's supplies, loads and stimuli, with an operating-point analysis.\n"
+                 f"              Set the .lib line to your sky130A install, then: ngspice bench.sp\n" if deck else
+                 f"bench.sp      not included: {derr}\n")
+              + "\nThe engine never edits your design: the deck adds sources and loads around your cell.\n")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("README.txt", readme)
+        z.writestr("finding.json", json.dumps(info, indent=1, default=str))
+        if deck:
+            z.writestr("bench.sp", deck)
+    buf.seek(0)
+    name = re.sub(r"[^a-z0-9]+", "_", f"kaaval_{f['rule']}_{rid}".lower())
+    return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=name + ".zip")
 
 
 @app.post("/api/runs/<rid>/findings/<fid>/fix")

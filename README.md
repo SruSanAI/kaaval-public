@@ -79,8 +79,11 @@ possible. No circuit parameter is changed to match. Tests on our own circuits:
 Digital timing tools (OpenSTA, OpenROAD) time paths from Liberty models; an analog macro has none, so the paths across
 the digital-analog boundary go untimed. `tools/analog_lib.py` characterises an analog cell in ngspice the way standard
 cells are (delay 50 %-50 %, output transition 20-80 %, input capacitance, over input slew x output load, per corner)
-and writes a Liberty file per corner. Test on our own cell, checked with a real Liberty reader (yosys):
-`tests/test_kaaval_liberty.py`.
+and writes a Liberty file per corner. A clocked comparator is timed like a flip-flop (clock -> output, rising_edge),
+but its delay depends on the input difference: our own StrongARM latch decides in 100 / 146 / 193 / 222 ps at
+100 mV / 10 mV / 1 mV / 0.1 mV (tt). So the Liberty file is characterised at the smallest difference the design
+must resolve (half an LSB for an ADC) and says which in its header. Tests on our own cells, checked with a real
+Liberty reader (yosys): `tests/test_kaaval_liberty.py`.
 
 ## Run it
 

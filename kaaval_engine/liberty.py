@@ -10,6 +10,12 @@ carries each load, and ngspice measures
   transition   output 20 % -> 80 % (rise_transition / fall_transition)
   capacitance  input pin charge over a full swing, Q / V
 
+A clocked comparator is timed like a flip-flop: an arc ("clk", "out", "rising_edge") is clock -> output, written with
+timing_type rising_edge and only the edge the decision makes. Its delay is not one number: the smaller the input
+difference, the longer the latch takes to decide (and near zero it does not decide in time: metastability), so
+decision_times() measures it against the overdrive, and the .lib is characterised at the smallest overdrive the design
+must resolve (half an LSB for an ADC), which is stated in the library's comment.
+
 The cell is the designer's own circuit; the engine builds every deck, nothing in the repository is run.
 
     lib = characterise(circuit, "comp", ports, supplies={"vdd": 1.8}, grounds=["vss"],
@@ -25,7 +31,7 @@ LOADS = [2e-15, 20e-15]              # output loads (F)
 
 
 def _deck_body(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, vdd, settle):
-    a, z = arc
+    a, z = arc[:2]
     full = slew / 0.6                                 # 20-80 % slew -> 0-100 % ramp
     t1, t2 = settle, settle + 4 * settle
     lines = [circuit, f"Xcell {' '.join(ports)} {cell}"]
@@ -41,7 +47,7 @@ def _deck_body(circuit, cell, ports, supplies, grounds, biases, arc, slew, load,
 
 
 def _measure(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, corner, temp, vdd, settle):
-    a, z = arc
+    a, z = arc[:2]
     body, t1, t2, full = _deck_body(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, vdd, settle)
     tb = sim.Testbench(sch=f"{cell}.lib.sch", circuit=body, analyses=[".op"])
     tb.supplies = lambda: [(f"Vsup{i}", p, v) for i, (p, v) in enumerate(supplies.items())]
@@ -69,8 +75,22 @@ def _measure(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, c
     return v, None
 
 
+def decision_times(circuit, cell, ports, supplies, grounds, clk, out, inp, inn, vcm, overdrives=(0.1, 0.01, 0.001),
+                   others=None, corner="tt", temp=27, slew=SLEWS[0], load=LOADS[0], settle=20e-9):
+    """A clocked comparator's clock -> output delay at each input difference (V, inp above inn): [(overdrive, delay s or
+    None, error)]. The delay grows as the difference shrinks; the smallest one the design must resolve is the one its
+    timing model must use."""
+    vdd = next(iter(supplies.values()))
+    out_rows = []
+    for dv in overdrives:
+        b = dict(others or {}, **{inp: vcm + dv / 2, inn: vcm - dv / 2})
+        r, e = _measure(circuit, cell, ports, supplies, grounds, b, (clk, out), slew, load, corner, temp, vdd, settle)
+        out_rows.append((dv, (r or {}).get("d1"), e))
+    return out_rows
+
+
 def characterise(circuit, cell, ports, supplies, grounds, arcs, biases=None, corner="tt", temp=27, slews=SLEWS,
-                 loads=LOADS, settle=20e-9):
+                 loads=LOADS, settle=20e-9, note=""):
     """{text: Liberty source, tables: {arc: {...}}, errors: [...]} for one corner. Rail of the arcs: the first supply."""
     biases = biases or {}
     vdd = next(iter(supplies.values()))
@@ -89,12 +109,12 @@ def characterise(circuit, cell, ports, supplies, grounds, arcs, biases=None, cor
             q = [abs(r["q"]) for r in grid.values() if r["q"] is not None]
             if q:                                   # Vin drives only the input pin: its charge is the pin's
                 caps[arc[0]] = min(q) / vdd
-    return dict(text=_liberty(cell, ports, supplies, grounds, tables, caps, corner, temp, vdd, slews, loads),
-                tables={f"{a}->{z}": {f"{s}|{c}": r for (s, c), r in g.items()} for (a, z), g in tables.items()},
+    return dict(text=_liberty(cell, ports, supplies, grounds, tables, caps, corner, temp, vdd, slews, loads, note),
+                tables={f"{k[0]}->{k[1]}": {f"{s}|{c}": r for (s, c), r in g.items()} for k, g in tables.items()},
                 errors=errors)
 
 
-def _liberty(cell, ports, supplies, grounds, tables, caps, corner, temp, vdd, slews, loads):
+def _liberty(cell, ports, supplies, grounds, tables, caps, corner, temp, vdd, slews, loads, note=""):
     ns = lambda x: f"{x * 1e9:.5f}"
     pf = lambda x: f"{x * 1e12:.6f}"
     idx1 = ", ".join(ns(s) for s in slews)
@@ -107,9 +127,11 @@ def _liberty(cell, ports, supplies, grounds, tables, caps, corner, temp, vdd, sl
         return (f"          {kind} (kaaval_{len(slews)}x{len(loads)}) {{\n            index_1 (\"{idx1}\");\n"
                 f"            index_2 (\"{idx2}\");\n            values ({', '.join(rows)});\n          }}\n")
 
-    ins = sorted({a for a, _ in tables} | set(caps))
-    outs = sorted({z for _, z in tables})
-    L = [f"/* {cell}: timing measured by Kaaval with ngspice and the open sky130 models, corner {corner}, {temp} C. */",
+    ins = sorted({k[0] for k in tables} | set(caps))
+    outs = sorted({k[1] for k in tables})
+    clocks = {k[0] for k in tables if len(k) > 2}
+    L = [f"/* {cell}: timing measured by Kaaval with ngspice and the open sky130 models, corner {corner}, {temp} C."
+         + (f" {note}" if note else "") + " */",
          f"library (kaaval_{cell}_{corner}) {{",
          '  delay_model : table_lookup;', '  time_unit : "1ns";', '  voltage_unit : "1V";', '  current_unit : "1uA";',
          '  capacitive_load_unit (1, pf);', '  pulling_resistance_unit : "1kohm";',
@@ -123,14 +145,24 @@ def _liberty(cell, ports, supplies, grounds, tables, caps, corner, temp, vdd, sl
          f"    index_1 (\"{idx1}\");", f"    index_2 (\"{idx2}\");", "  }",
          f"  cell ({cell}) {{", "    dont_touch : true;", "    dont_use : true;"]
     for p in ins:
-        L += [f"    pin ({p}) {{", "      direction : input;", f"      capacitance : {pf(caps.get(p, 0.0))};", "    }"]
+        L += [f"    pin ({p}) {{", "      direction : input;"] + (["      clock : true;"] if p in clocks else []) + \
+             [f"      capacitance : {pf(caps.get(p, 0.0))};", "    }"]
     for z in outs:
         L += [f"    pin ({z}) {{", "      direction : output;"]
-        for (a, zz), g in tables.items():
+        for k, g in tables.items():
+            a, zz = k[:2]
             if zz != z:
                 continue
             first = next(iter(g.values()))
             sense = first["sense"]
+            if len(k) > 2:
+                # clock -> output: only the edge the decision makes (clock rise -> output leaves its reset level);
+                # the reset on the falling clock is not a data path
+                d, tr = ("d1", "r1") if sense == "positive_unate" else ("d1", "f1")
+                L += [f"      timing () {{", f"        related_pin : \"{a}\";", f"        timing_type : {k[2]};",
+                      table("cell_rise" if tr == "r1" else "cell_fall", k, d).rstrip("\n"),
+                      table("rise_transition" if tr == "r1" else "fall_transition", k, tr).rstrip("\n"), "      }"]
+                continue
             # positive unate: input rise -> output rise (d1 is the rise delay); negative: input rise -> output fall
             rise_d, fall_d = ("d1", "d2") if sense == "positive_unate" else ("d2", "d1")
             L += [f"      timing () {{", f"        related_pin : \"{a}\";", f"        timing_sense : {sense};",

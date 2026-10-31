@@ -71,10 +71,11 @@ It judges only what it can see whole: a schematic that uses cells it cannot reso
 repository), or a difference only in pin or net names, is reported as not judged. A mismatch shows that the committed
 layout and schematic differ: either the chip is not the circuit that was simulated, or the schematic is out of date.
 
-Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both ways, median 0.24 s per cell):
-241 match; 54 warnings in 25 repositories (46 with different devices, 8 with sizes more than 5 % off), 13 small size
-notes and 5 with layout dummies; 98 differ only in names and 24 use cells we cannot resolve (not judged); 16 could not
-be compared. Counts only; results on other people's designs are not published.
+Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both ways, median 0.25 s per cell):
+253 match; 60 warnings in 25 repositories (48 with different devices, 12 with sizes more than 5 % off), 13 small
+size notes and 5 with layout dummies; 98 differ only in names and 6 use cells we cannot resolve (digital blocks with
+no schematic: not judged); 16 could not be compared. Counts only; results on other people's designs are not
+published.
 
 **As drawn, with its capacitance.** A layout that matches its schematic device for device still adds the capacitance
 of every wire, junction and overlap. For such a cell, the review runs its own power-up or stability test again,

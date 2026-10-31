@@ -219,7 +219,7 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
     if arm == "floor":
         return dict(arm=arm, blocks=[], plans=[], usage=[])
     if arm == "rules":
-        return _rules(ws, log, max_cells=int(os.environ.get("KAAVAL_BASELINE_CELLS", "6")))
+        return _rules(ws, log, max_cells=int(os.environ.get("KAAVAL_BASELINE_CELLS", "6")), docs=docs)
     cells = engine.cells(ws)
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": context(docs, cells, floor)}]
     log("plan", f"{arm} is reading {len(cells)} circuit cells and the docs")
@@ -270,25 +270,40 @@ def digital_only(netlist):
 
 
 THICK = re.compile(r"(?i)g5v0d10v5|g5v0d16v0|_05v0|sky130_fd_sc_hvl")
+# 1.8 V-only parts: thin-oxide transistors and the 1.8 V standard-cell libraries (hd, hdll, hs, ms, ls, lp)
+THIN = re.compile(r"(?i)sky130_fd_pr__[np]fet_01v8(_lvt|_hvt)?\b|sky130_fd_sc_(hd|hdll|hs|ms|ls|lp)__")
 
 
 def rail_volts(port, netlist):
-    """A guess at a supply port's voltage without a model: 3.3 V when a thick-oxide (5 V-rated) device or a 3.3 V
-    (hvl) standard cell has its source, bulk or power pin on it, or its name says so (VAPWR, 3v3); 1.8 V otherwise.
+    """A guess at a supply port's voltage without a model: 3.3 V when its name says so (VAPWR, 3v3); else 1.8 V when
+    any 1.8 V-only part (thin-oxide transistor, hd / hs / ms / ls standard cell) has its source, bulk or power pin on
+    it; else 3.3 V when a thick-oxide (5 V-rated) device or a 3.3 V (hvl) standard cell does; 1.8 V otherwise.
     Returns (volts, evidence)."""
     p = port.lower()
+    thick = thin = None
     for line in (netlist or "").splitlines():
         w = line.split()
-        if len(w) > 5 and w[0][0] in "xXmM" and THICK.search(line):
-            nets = [x.lower() for x in w[1:] if "=" not in x]
-            if p in (nets[2:4] if "fet" in line.lower() else nets[:-1]):
-                return 3.3, f"{w[0]} is a thick-oxide / 3.3 V device on {port}"
-    if re.search(r"(?i)vapwr|3v3", port):
-        return 3.3, f"the name {port}"
+        if len(w) < 3 or w[0][0] not in "xXmM":
+            continue
+        nets = [x.lower() for x in w[1:] if "=" not in x]
+        on = p in (nets[2:4] if "fet" in line.lower() else nets[:-1])     # a transistor's source / bulk, a cell's pins
+        if on and thick is None and len(w) > 5 and THICK.search(line):
+            thick = w[0]
+        if on and thin is None and THIN.search(line):
+            thin = w[0]
+    # a 1.8 V-only part on the rail wins: thick-oxide parts work at 1.8 V, thin ones do not survive 3.3 V (30 Oct
+    # backtest: a flash ADC with a thick-oxide buffer and an sky130_fd_sc_hd encoder on one VDD was run at 3.3 V)
+    if re.search(r"(?i)vapwr|3v3", port):            # Tiny Tapeout's 3.3 V pin is 3.3 V whatever sits on it (a
+        return 3.3, f"the name {port}"                  # 1.8 V part there is then an overstress finding)
+    if thin:
+        return 1.8, (f"{thin} is a 1.8 V part on {port}" + (f" ({thick} is thick-oxide; it also works at 1.8 V)"
+                                                             if thick else ""))
+    if thick:
+        return 3.3, f"{thick} is a thick-oxide / 3.3 V device on {port}"
     return 1.8, f"no 3.3 V device on {port}"
 
 
-def _rules(ws, log, max_cells=20):
+def _rules(ws, log, max_cells=20, docs=""):
     """The no-model baseline: every cell whose pins name a supply and a ground is powered up at all 45 conditions.
     3.3 V for pins named like the analog 3.3 V rail, 1.8 V otherwise. Cells with two supply voltages or pins named
     like an enable / reset also get a sequence test (rail order and speed); cells with supplies at two voltages also
@@ -313,6 +328,8 @@ def _rules(ws, log, max_cells=20):
                         f"power-up state)")
             continue
         volts = {p: rail_volts(p, c.get("netlist")) for p in sup}
+        if "the chip has no 3.3 V supply" in (docs or ""):        # runner.chip_supplies: the top level has no VAPWR
+            volts = {p: (1.8, "the chip's top level has no VAPWR: only the 1.8 V supply") for p in sup}
         guess = "; ".join(f"{p} {v:g} V ({why})" for p, (v, why) in volts.items())
         ep = dict(cell=c["cell"], kind="powerup", supplies={p: v for p, (v, _) in volts.items()}, grounds=gnd,
                   loads=[], corners=CORNERS, temps=[-40, 27, 125], vscales=[0.9, 1.0],

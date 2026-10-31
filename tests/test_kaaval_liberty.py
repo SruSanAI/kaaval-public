@@ -85,6 +85,19 @@ def test_comparator_timing_model_is_a_clock_arc():
             assert r.returncode == 0, r.stderr
 
 
+def test_comparator_offset_with_mismatch():
+    """With sky130 device mismatch (tt_mm, a seed per sample) this latch does not resolve 1 mV: 30 of 40 samples
+    decided the wrong way at +-1 mV, 7 of 10 at +-5 mV, none at +-20 mV (input-referred offset of the order of
+    10 mV, set by its minimum-length latch). So its timing model must not be written at 1 mV."""
+    fine = liberty.offset_check(SA, "sarm", SA_PORTS, {"vdd": 1.8}, ["vss"], "clk", "out", "inp", "inn", 0.9, 0.001,
+                                samples=8)
+    big = liberty.offset_check(SA, "sarm", SA_PORTS, {"vdd": 1.8}, ["vss"], "clk", "out", "inp", "inn", 0.9, 0.05,
+                               samples=8)
+    assert fine["errors"] == 0 and big["errors"] == 0, (fine, big)
+    assert fine["wrong"] >= 2, fine                     # mismatch makes 1 mV a coin toss
+    assert big["wrong"] == 0 and fine["corner"] == "tt_mm", big
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -492,6 +492,9 @@ def _same(a, b, vtol=0.02, itol=0.05):
 # passing slow-ramp cases must not spend the time a real failure needs (our kick-started reference stays off when
 # 3.3 V leads by 1 ms, but at 2 ns a 1 ms ramp is a million steps, and earlier passes had used the 300 s).
 FINE_BUDGET = 300.0
+# ngspice sessions a power-up test runs at once for its default-step pass (one per corner and supply): 2 on a laptop,
+# more on a server with the cores and memory (KAAVAL_WORKERS); the fine-step checks stay one at a time on their budget
+WORKERS = max(1, int(os.environ.get("KAAVAL_WORKERS", "2") or 2))
 SUSPECT_BUDGET = 900.0
 
 

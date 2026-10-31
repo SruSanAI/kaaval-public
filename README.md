@@ -85,6 +85,14 @@ but its delay depends on the input difference: our own StrongARM latch decides i
 must resolve (half an LSB for an ADC) and says which in its header. Tests on our own cells, checked with a real
 Liberty reader (yosys): `tests/test_kaaval_liberty.py`.
 
+An oscillator has no clock input; it runs from its supply (and a control voltage, for a VCO), so the clock it gives
+the logic moves with process, temperature and supply. `kaaval_engine/clocks.py` powers it up at each condition,
+measures period and duty cycle over several cycles, and writes `create_clock` on its output pin: one SDC per process
+corner (that corner's shortest period) and one conservative SDC (the shortest anywhere). On our own 5-stage ring
+the 45 conditions take 45 s: 1.133 ns at ff, -40 °C, 1.1x supply, to 3.573 ns at ss, -40 °C, 0.9x, with the duty
+cycle at 46-53 % (the skewed corners move it). Jitter is not measured (a noiseless transient has none), so the SDC
+leaves `set_clock_uncertainty` to the designer's jitter budget. Tests: `tests/test_kaaval_clocks.py`.
+
 ## Run it
 
 Needs only open tools: [ngspice](https://ngspice.sourceforge.io/) and the open sky130 PDK.
@@ -130,6 +138,8 @@ public issue) · [Code of Conduct](CODE_OF_CONDUCT.md)
 - Open PDKs only (sky130 today); foundry PDKs and commercial simulators are not supported.
 - Schematic-level: layout parasitics are seen only when an extracted netlist is in the repository.
 - Repositories with only images or PDFs of their schematics cannot be simulated; Kaaval says so.
+- Timing constraints are measured without noise: no jitter, and a regulator's output is its DC value (a load
+  step droops lower).
 
 ---
 by Sanjay Sivakumar · [github.com/SruSanCyborg](https://github.com/SruSanCyborg)

@@ -6,7 +6,26 @@ conditions left unconfirmed, errors, minutes. Nothing here decides that a findin
 
     python tools/score_backtest.py OUT.jsonl bench/silicon_scope.json > backtest.md
 """
-import json, sys
+import json, os, sqlite3, sys
+
+DB = os.path.expanduser(os.environ.get("KAAVAL_DB", "~/.kaaval/kaaval.db"))
+
+
+def rails(r):
+    """The supplies each test of a reviewed row used (from Kaaval's run store), so every finding's rail voltages can be
+    checked before it is quoted: 'cell VDD 1.8 V; ...'."""
+    if not r.get("rid") or not os.path.exists(DB):
+        return ""
+    c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+    row = c.execute("SELECT data FROM live WHERE run_id=?", (r["rid"],)).fetchone()
+    c.close()
+    out = []
+    for p in (json.loads(row[0]).get("plan_results") or []) if row else []:
+        pl = p.get("plan") if isinstance(p, dict) else None
+        if isinstance(pl, dict) and pl.get("supplies"):
+            s = ", ".join(f"{k} {v:g} V" for k, v in pl["supplies"].items())
+            out.append(f"{os.path.basename(pl.get('cell', '?'))} {s}")
+    return "; ".join(dict.fromkeys(out))
 
 RELEVANT = {  # the rules that could explain each kind of in-scope silicon problem
     "stability": {"analog/unstable", "analog/low_phase_margin", "analog/oscillates"},
@@ -41,7 +60,7 @@ def main(out, scope_path):
           f"unknown cause. Counts only: on {len(sc['in_scope_fail'])} chips one hit or miss moves a percentage by "
           f"{100 / len(sc['in_scope_fail']):.0f} points, so none is given. Scope labels are the Kaaval author's reading "
           f"of each outcome, not the designers'.\n")
-    print("## In-scope silicon failures\n\n| # | project | silicon | Kaaval findings | relevant | coverage |\n|---|---|---|---|---|---|")
+    print("## In-scope silicon failures\n\n| # | project | silicon | Kaaval findings | relevant | coverage | rails used |\n|---|---|---|---|---|---|---|")
     hit = ran = 0
     for n, why in sorted(sc["in_scope_fail"].items(), key=lambda x: int(x[0])):
         r = recs.get(n, {})
@@ -51,9 +70,9 @@ def main(out, scope_path):
         if r.get("status") == "done":
             ran += 1
             hit += bool(rel)
-        print(f"| {n} | {r.get('project', '?')} | {why} | {', '.join(rules) or 'none'} | {', '.join(rel) or '-'} | {cov(r)} |")
+        print(f"| {n} | {r.get('project', '?')} | {why} | {', '.join(rules) or 'none'} | {', '.join(rel) or '-'} | {cov(r)} | {rails(r) or '-'} |")
     print(f"\nFlagged with a relevant rule: **{hit} of {ran}** reviewed ({len(sc['in_scope_fail'])} in scope).\n")
-    print("## Working chips (false-alarm check)\n\n| # | project | design-risk findings | traps | coverage |\n|---|---|---|---|---|")
+    print("## Working chips (false-alarm check)\n\n| # | project | design-risk findings | traps | coverage | rails used |\n|---|---|---|---|---|---|")
     fa = rn = 0
     for n in sorted(sc["works"], key=int):
         r = recs.get(n, {})
@@ -61,7 +80,7 @@ def main(out, scope_path):
         if r.get("status") == "done":
             rn += 1
             fa += bool(rules)
-        print(f"| {n} | {r.get('project', '?')} | {', '.join(rules) or 'none'} | {len(trap(r))} | {cov(r)} |")
+        print(f"| {n} | {r.get('project', '?')} | {', '.join(rules) or 'none'} | {len(trap(r))} | {cov(r)} | {rails(r) or '-'} |")
     print(f"\nWorking chips with at least one design-risk finding: **{fa} of {rn}** reviewed (each to be read: a finding "
           f"on a working chip is a false alarm or a margin the bench never exercised).\n")
     print("## Out of scope (not scored)\n")

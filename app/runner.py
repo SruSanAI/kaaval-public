@@ -163,13 +163,38 @@ def unc_note(lv):
     return f" · {n} condition(s) not confirmed (not tested)" if n else ""
 
 
+NO_3V3 = "the chip has no 3.3 V supply"
+
+
+def chip_supplies(root):
+    """Which supplies the chip itself gives the design, from the Tiny Tapeout top level (src/*.v, read as text):
+    a wrapper with VPWR / VDPWR and no VAPWR has only the 1.8 V supply → a line for the planner, or ""."""
+    names = set()
+    for d in ("src", "verilog"):
+        dd = os.path.join(root, d)
+        if os.path.isdir(dd):
+            for f in sorted(os.listdir(dd)):
+                if f.endswith((".v", ".sv")):
+                    txt = open(os.path.join(dd, f), errors="replace").read(200_000)
+                    # the wrapper is the module that takes the chip's power pins as ports
+                    names |= {m[1].upper() for m in re.findall(r"(?i)\b(input|inout)\s+(?:wire\s+)?(VPWR|VDPWR|VAPWR)\b", txt)}
+    if names and "VAPWR" not in names:
+        return (f"## Tiny Tapeout power pins (src/*.v)\nThe top level has {', '.join(sorted(names))} and no VAPWR: "
+                f"{NO_3V3}; every block runs from the 1.8 V supply.")
+    return ""
+
+
 def project_docs(root):
-    """README and Tiny Tapeout docs, the designer's own words about the design (text, capped)."""
+    """README and Tiny Tapeout docs, the designer's own words about the design (text, capped), and the supplies the
+    chip's top level declares."""
     out = []
     for rel in ("README.md", "docs/info.md", "info.yaml"):
         p = os.path.join(root, rel)
         if os.path.isfile(p):
             out.append(f"## {rel}\n" + open(p, errors="replace").read()[:8000])
+    sup = chip_supplies(root)
+    if sup:
+        out.append(sup)
     return "\n\n".join(out)
 
 
@@ -431,7 +456,7 @@ def review(rid, src, root=None):
         if not planner.configured("muse"):
             # without the model, every cell is still powered up (the no-model baseline), clearly labelled as such
             try:
-                res = planner.review("rules", ws, "", "")
+                res = planner.review("rules", ws, project_docs(root), "")   # (the chip's supplies, for the rail guess)
                 nf = keep_plans(rid, lv, res, "rules")
                 lv.stage("muse", "done", f"no model · {len(res['plans'])} cell(s) powered up · {nf} finding(s)" + unc_note(lv))
                 store.event(rid, "muse", f"Muse Spark is not connected on this server. As a baseline, every cell with "

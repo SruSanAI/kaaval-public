@@ -384,10 +384,14 @@ def _odd(r, ref=None, vtol=0.1):
 
 def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):
     """Power-ups of every group (key, corner, vscale, schedule), each confirmed by sim.startup_checked. All default-step
-    runs come first; then the groups whose default result looks like a failure (suspect(key, coarse)) take their
+    runs come first (sim.WORKERS at once); then the groups whose default result looks like a failure (suspect(key, coarse)) take their
     fine-step checks first, on their own budget (sim.SUSPECT_BUDGET), and the rest share sim.FINE_BUDGET. Returns
     {key: {temp: (result, err)}}."""
-    coarse = {key: sim.startup_corner(tb, c, temps, v, ramp, settle, timeout, sched) for key, c, v, sched in groups}
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=sim.WORKERS) as ex:     # each run is its own ngspice process
+        futs = {key: ex.submit(sim.startup_corner, tb, c, temps, v, ramp, settle, timeout, sched)
+                for key, c, v, sched in groups}
+        coarse = {key: f.result() for key, f in futs.items()}
     sus, rest = sim.budget(sim.SUSPECT_BUDGET), sim.budget()
     flag = {key: suspect(key, coarse) for key, *_ in groups}
     out = {}

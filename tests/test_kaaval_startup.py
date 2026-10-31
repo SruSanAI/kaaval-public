@@ -123,11 +123,43 @@ def test_suspect_conditions_are_confirmed_first_on_their_own_budget():
                                lambda key, coarse: any(P._odd(r) for r, e in coarse[key].values()))
     finally:
         sim.startup_corner = real
-    assert [c for c, tm in calls if tm is None] == ["tt", "ff", "ss"]
+    assert sorted(c for c, tm in calls if tm is None) == ["ff", "ss", "tt"]          # (default-step runs: in parallel)
     assert [c for c, tm in calls if tm is not None][0] == "ss", calls
     (r, e), = got["ss"].values()
     assert e is None and r["tmax"] == 2e-9, e                    # the failure is confirmed
     assert all(got[c][27][1].startswith("unconfirmed") for c in ("tt", "ff"))
+
+
+def test_default_step_runs_overlap():
+    """The default-step pass runs sim.WORKERS ngspice sessions at once; every group still gets its own result."""
+    import threading, time as _t
+    from kaaval_engine import plan as P
+    ok = dict(i_op=1e-5, i_end=1e-5, i_prev=1e-5, nodes={"x": (0.5, 0.5)})
+    live, peak, lock = [0], [0], threading.Lock()
+
+    def fake(tb, corner, temps, vscale, ramp, settle, timeout, schedule, tmax=None):
+        if tmax is None:
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            _t.sleep(0.3)
+            with lock:
+                live[0] -= 1
+        return {t: (dict(ok, nodes={"x": (vscale, vscale)}), None) for t in temps}
+
+    real, workers = sim.startup_corner, sim.WORKERS
+    sim.startup_corner, sim.WORKERS = fake, 3
+    try:
+        groups = [(f"{c}{v}", c, v, None) for c in ("tt", "ss", "ff") for v in (0.9, 1.0)]
+        t0 = _t.time()
+        got = P._checked_sweep(None, groups, [27], 20e-6, 300e-6, 150, lambda key, coarse: False)
+        wall = _t.time() - t0
+    finally:
+        sim.startup_corner, sim.WORKERS = real, workers
+    assert peak[0] == 3, peak
+    assert wall < 6 * 0.3 * 0.75, wall                          # 6 runs of 0.3 s, 3 at a time
+    assert all(got[f"{c}{v}"][27][0]["nodes"]["x"] == (v, v) for c in ("tt", "ss", "ff") for v in (0.9, 1.0))
+
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

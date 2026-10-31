@@ -14,7 +14,9 @@ A clocked comparator is timed like a flip-flop: an arc ("clk", "out", "rising_ed
 timing_type rising_edge and only the edge the decision makes. Its delay is not one number: the smaller the input
 difference, the longer the latch takes to decide (and near zero it does not decide in time: metastability), so
 decision_times() measures it against the overdrive, and the .lib is characterised at the smallest overdrive the design
-must resolve (half an LSB for an ADC), which is stated in the library's comment.
+must resolve (half an LSB for an ADC), which is stated in the library's comment. offset_check() first asks whether the
+comparator resolves that overdrive at all with device mismatch: a decision time at 1 mV means nothing when the
+mismatch offset is 10 mV.
 
 The cell is the designer's own circuit; the engine builds every deck, nothing in the repository is run.
 
@@ -46,14 +48,15 @@ def _deck_body(circuit, cell, ports, supplies, grounds, biases, arc, slew, load,
     return "\n".join(lines), t1, t2, full
 
 
-def _measure(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, corner, temp, vdd, settle):
+def _measure(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, corner, temp, vdd, settle, seed=None):
     a, z = arc[:2]
     body, t1, t2, full = _deck_body(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, vdd, settle)
     tb = sim.Testbench(sch=f"{cell}.lib.sch", circuit=body, analyses=[".op"])
     tb.supplies = lambda: [(f"Vsup{i}", p, v) for i, (p, v) in enumerate(supplies.items())]
     stop = t2 + 4 * settle
     h, lo, hi = vdd / 2, 0.2 * vdd, 0.8 * vdd
-    ctl = [f"option temp={temp}", f"tran {min(settle, full) / 50:.4g} {stop:.4g} 0 {min(settle, full) / 20:.4g}",
+    ctl = ([f"setseed {int(seed)}"] if seed is not None else []) + [   # a mismatch sample (corner *_mm) per seed
+           f"option temp={temp}", f"tran {min(settle, full) / 50:.4g} {stop:.4g} 0 {min(settle, full) / 20:.4g}",
            f"meas tran vz0 avg v({z}) from={0.8 * t1:.4g} to={t1:.4g}",
            f"meas tran vz1 avg v({z}) from={t2 - 0.2 * settle:.4g} to={t2:.4g}",
            # input rises at t1, falls at t2; the output answers each edge in one direction
@@ -87,6 +90,36 @@ def decision_times(circuit, cell, ports, supplies, grounds, clk, out, inp, inn, 
         r, e = _measure(circuit, cell, ports, supplies, grounds, b, (clk, out), slew, load, corner, temp, vdd, settle)
         out_rows.append((dv, (r or {}).get("d1"), e))
     return out_rows
+
+
+def offset_check(circuit, cell, ports, supplies, grounds, clk, out, inp, inn, vcm, overdrive, samples=40, others=None,
+                 corner="tt", temp=27, slew=SLEWS[0], load=LOADS[0], settle=20e-9):
+    """Does a clocked comparator still decide the right way at +-overdrive with device mismatch? Each sample is one run
+    at the PDK's mismatch corner (sky130 `<corner>_mm`: every device drawn on its own) with its own seed; a sample is
+    wrong when the output does not rise at +overdrive or rises at -overdrive. Its timing model is only meaningful at
+    an overdrive it resolves: write the .lib at the smallest one where (almost) no sample is wrong.
+    -> {wrong, samples, errors, rate, rate_hi (95 % Wilson upper bound), overdrive, corner}"""
+    vdd = next(iter(supplies.values()))
+    mm = corner if corner.endswith("_mm") else f"{corner}_mm"
+    wrong = errors = 0
+    for seed in range(1, samples + 1):
+        got = []
+        for dv in (overdrive, -overdrive):
+            b = dict(others or {}, **{inp: vcm + dv / 2, inn: vcm - dv / 2})
+            r, e = _measure(circuit, cell, ports, supplies, grounds, b, (clk, out), slew, load, mm, temp, vdd, settle,
+                            seed=seed)
+            got.append(True if r is not None and r.get("vz1", 0) > r.get("vz0", 0)
+                       else False if e and "does not switch" in e else None)
+        if None in got:
+            errors += 1
+            continue
+        wrong += (not got[0]) or got[1]
+    n = samples - errors
+    z = 1.96
+    hi = 1.0 if n == 0 else min(1.0, ((wrong / n) + z * z / (2 * n) + z * ((wrong / n) * (1 - wrong / n) / n
+                                                                           + z * z / (4 * n * n)) ** 0.5) / (1 + z * z / n))
+    return dict(wrong=wrong, samples=n, errors=errors, rate=(wrong / n if n else None), rate_hi=hi,
+                overdrive=overdrive, corner=mm)
 
 
 def characterise(circuit, cell, ports, supplies, grounds, arcs, biases=None, corner="tt", temp=27, slews=SLEWS,

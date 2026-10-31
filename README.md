@@ -76,6 +76,15 @@ Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both way
 notes and 5 with layout dummies; 98 differ only in names and 24 use cells we cannot resolve (not judged); 16 could not
 be compared. Counts only; results on other people's designs are not published.
 
+**As drawn, with its capacitance.** A layout that matches its schematic device for device still adds the capacitance
+of every wire, junction and overlap. For such a cell, the review runs its own power-up or stability test again,
+unchanged, on the layout extracted with those capacitances (`kaaval_engine/postlayout.py`), and reports where the
+drawn chip comes up in another state, rests at another current or loses phase margin. Wire resistance is not
+extracted. Only tests that drive every input are compared: in a pilot on 8 matched cells with the no-model
+baseline's tests, all 3 'differences' were inputs left floating (where a floating input settles depends on that very
+capacitance), and the one cell with every pin driven agreed. Muse Spark's planned tests, which bias the inputs, are
+what this comparison runs on.
+
 ## Kaaval Zoom: the whole chip, down to each transistor
 
 A review's **Chip view** draws the project's whole Tiny Tapeout tile from its top module and `info.yaml`, read as text:

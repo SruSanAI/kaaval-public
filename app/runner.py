@@ -12,7 +12,8 @@ import itertools, os, re, shutil, subprocess, threading, time
 
 from app import engine, inputs, planner, store
 from guard import sch_svg
-from kaaval_engine import extract, layout_check
+from kaaval_engine import extract, layout_check, postlayout
+from kaaval_engine import plan as kplan
 
 WORK = os.path.expanduser(os.environ.get("KAAVAL_WORK", "~/.kaaval/repos"))
 MAX_REPO_MB = 300
@@ -128,6 +129,71 @@ class Live:
         with self.lock:
             self.d.update(kw)
             self.save()
+
+
+def post_layout(rid, lv, root, files, lay, max_cells=3):
+    """The circuit as drawn: for cells whose layout matched their schematic (layout_check), the power-up and
+    stability tests the review ran on the schematic run again, unchanged, on the layout extracted with its
+    capacitances (postlayout); a disagreement is a finding, agreement is said."""
+    ok = {r["sch"]: r for r in lay or [] if r.get("verdict") in ("match", "sizes differ")}
+    todo = [(k, pr) for k, pr in enumerate(lv.d.get("plan_results") or [])
+            if pr.get("ok") and pr["plan"].get("cell") in ok and pr["plan"].get("kind") in ("powerup", "stability")]
+    # a test that leaves an input undriven says nothing as drawn: where a floating input settles depends on the very
+    # capacitance the layout adds (in a pilot, all three 'differences' were such inputs). Muse Spark's plans bias them
+    floating = {}
+    for k, pr in todo:
+        try:
+            u = kplan.undriven(pr["plan"], root)
+        except Exception:                                   # noqa: BLE001 - an unreadable cell is simply not compared
+            u = ["?"]
+        if u:
+            floating[pr["plan"]["cell"]] = u
+    if floating:
+        store.event(rid, "muse", f"Not compared as drawn ({len(floating)} cell(s)): their tests leave inputs undriven "
+                                 f"(e.g. {next(iter(floating))}: {', '.join(next(iter(floating.values()))[:4])}), and "
+                                 f"a floating input settles wherever the layout's capacitance puts it. A planned test "
+                                 f"that biases them (Muse Spark) is compared.", "info")
+    todo = [(k, pr) for k, pr in todo if pr["plan"]["cell"] not in floating]
+    cells = list(dict.fromkeys(pr["plan"]["cell"] for _, pr in todo))[:max_cells]
+    todo = [(k, pr) for k, pr in todo if pr["plan"]["cell"] in cells]
+    if not todo:
+        return
+    extra = {}
+    for c in cells:
+        r = ok[c]
+        text, err = extract.cell(root, r["cell"], r["mag"], parasitics=True)
+        if text:
+            extra[postlayout.post_path(r["cell"])] = text
+        else:
+            store.event(rid, "muse", f"{r['cell']}: post-layout extraction failed ({err})", "warn")
+    if not extra:
+        return
+    ws2 = engine.upload(dict(files, **extra))
+    agree = []
+    for k, pr in todo:
+        r = ok[pr["plan"]["cell"]]
+        if postlayout.post_path(r["cell"]) not in extra:
+            continue
+        try:
+            res = engine.plan(ws2, dict(pr["plan"], cell=postlayout.post_cell(r["cell"])))
+        except engine.EngineError as e:
+            res = dict(ok=False, errors=[str(e)])
+        if not res.get("ok"):
+            store.event(rid, "muse", f"{r['cell']} ({pr['plan']['kind']}): the post-layout test could not run: "
+                                     f"{'; '.join(res.get('errors') or [])[:300]}", "warn")
+            continue
+        kind = pr["plan"]["kind"]
+        diffs = postlayout.compare(kind, pr.get("results") or [], res.get("results") or [])
+        n = len([x for x in pr.get("results") or [] if not x.get("error")])
+        f = postlayout.finding(r["cell"], kind, diffs, n)
+        if f:
+            store.add_finding(rid, dict(f, kind="risk", location=f"{r['mag']} as drawn, with its capacitance, vs "
+                                                                  f"{r['sch']}"))
+        else:
+            agree.append(f"{r['cell']} ({kind})")
+    if agree:
+        store.event(rid, "muse", "As drawn, with the capacitance its layout adds, these give the same result as their "
+                                 "schematic at every condition both completed: " + ", ".join(agree))
 
 
 def keep_plans(rid, lv, res, by):
@@ -500,6 +566,11 @@ def review(rid, src, root=None):
             except (planner.PlannerError, engine.EngineError) as e:
                 lv.stage("muse", "error", "planner failed")
                 store.event(rid, "muse", f"Muse Spark review did not complete: {e}", "error")
+
+        try:                                  # the same tests on the layout as drawn, with its capacitance
+            post_layout(rid, lv, root, files, lay)
+        except (engine.EngineError, OSError) as e:
+            store.event(rid, "muse", f"The post-layout comparison did not complete: {e}", "warn")
 
         lv.stage("review", "running")
         n = len(store.findings(rid))

@@ -23,6 +23,16 @@ def test_inverter_chain_simulates():
     assert vy > 1.7 and vz > 1.7, (vy, vz)
 
 
+def test_other_libraries_are_defined_too():
+    """hs / ms / ls / lp / hdll cells (a layout check saw 24 cells 'not judged' for want of them)."""
+    import os
+    if not os.path.isdir(os.path.join(stdcells.PDK_ROOT, "libs.ref", "sky130_fd_sc_hs")):
+        print("skip: sky130_fd_sc_hs not installed")
+        return
+    d = stdcells.defs_for("x1 A VGND VNB VPB VPWR Y sky130_fd_sc_hs__inv_1")
+    assert ".subckt sky130_fd_sc_hs__inv_1" in d.lower(), d[:200]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

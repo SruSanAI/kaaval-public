@@ -1,6 +1,7 @@
 """stdcells.py — sky130 standard-cell subcircuits for designs that instantiate them.
 
-Mixed-signal cells often use digital standard cells (sky130_fd_sc_hd__inv_1, ..._hvl__ for 3.3 V) next to
+Mixed-signal cells often use digital standard cells (sky130_fd_sc_hd__inv_1, ..._hvl__ for 3.3 V, the hs / ms / ls /
+lp / hdll libraries) next to
 transistors. Their transistor-level definitions ship with the PDK (libs.ref/<lib>/spice/<lib>.spice); only the cells a
 circuit instantiates and does not define itself are added, so the deck stays small and the model trim (pdk.lib_for)
 sees the transistor families they use.
@@ -9,8 +10,10 @@ import functools, os, re
 
 from kaaval_engine.paths import PDK_ROOT
 
-LIBS = ("sky130_fd_sc_hd", "sky130_fd_sc_hvl")
-CELL = re.compile(r"\b(sky130_fd_sc_(?:hd|hvl)__\w+)", re.I)
+# every sky130 standard-cell library the PDK ships (a library not installed simply defines nothing)
+LIBS = ("sky130_fd_sc_hd", "sky130_fd_sc_hvl", "sky130_fd_sc_hs", "sky130_fd_sc_ms", "sky130_fd_sc_ls",
+        "sky130_fd_sc_lp", "sky130_fd_sc_hdll")
+CELL = re.compile(r"\b(sky130_fd_sc_(?:hd|hvl|hs|ms|ls|lp|hdll)__\w+)", re.I)
 
 
 @functools.lru_cache(maxsize=None)
@@ -45,7 +48,7 @@ def defs_for(circuit):
         if c in seen or c in defined:
             continue
         seen.add(c)
-        lib = "sky130_fd_sc_hvl" if "_hvl__" in c else "sky130_fd_sc_hd"
+        lib = c.split("__")[0]                          # the library is the cell name's prefix
         d = _library(lib).get(c)
         if d:
             out.append(d)

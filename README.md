@@ -93,6 +93,22 @@ the 45 conditions take 45 s: 1.133 ns at ff, -40 °C, 1.1x supply, to 3.573 ns a
 cycle at 46-53 % (the skewed corners move it). Jitter is not measured (a noiseless transient has none), so the SDC
 leaves `set_clock_uncertainty` to the designer's jitter budget. Tests: `tests/test_kaaval_clocks.py`.
 
+A comparator's timing model only means something at an overdrive it resolves. `liberty.offset_check` runs the PDK's
+mismatch corner (every device drawn on its own, a seed per sample) and counts wrong decisions at ±overdrive: our
+StrongARM latch decides wrong in 30 of 40 samples at ±1 mV and in none at ±20 mV, an input offset of σ 7.7 mV
+(bisection, 20 samples). Widening its devices up to 3x the area did not change that: at minimum length, the fix is
+longer devices or offset calibration, and the .lib belongs at the overdrive it resolves.
+
+A PLL's clock is not usable until it locks, so `clocks.pll_lock` measures when the control voltage settles for good
+(and that the divided clock then runs at the reference period), and `clocks.reset_check` flags a reset released
+earlier. Our own sky130 PLL (flip-flop PFD, charge pump, RC filter, starved ring VCO, divide by 2) locks at 1.030 V
+with a 100 MHz reference, 0.2 µs after it starts; a reference its VCO cannot reach is reported as never locking.
+
+When the logic runs from the design's own regulator, `kaaval_engine/supply.py` picks the standard-cell libraries to
+sign off at from what the regulator delivers: the lowest output at ss names the setup library, the highest at ff the
+hold library. A load step dips lower than the DC answer: our 1.8 -> 1.5 V LDO reads 1.492 V in DC but dips 123 mV to
+1.378 V after a 10 µA -> 1 mA step, so setup belongs on `sky130_fd_sc_hd__ss_n40C_1v35`, not `..._1v44`.
+
 ## Run it
 
 Needs only open tools: [ngspice](https://ngspice.sourceforge.io/) and the open sky130 PDK.
@@ -138,8 +154,7 @@ public issue) · [Code of Conduct](CODE_OF_CONDUCT.md)
 - Open PDKs only (sky130 today); foundry PDKs and commercial simulators are not supported.
 - Schematic-level: layout parasitics are seen only when an extracted netlist is in the repository.
 - Repositories with only images or PDFs of their schematics cannot be simulated; Kaaval says so.
-- Timing constraints are measured without noise: no jitter, and a regulator's output is its DC value (a load
-  step droops lower).
+- Timing constraints are measured without noise (no jitter), and offsets only as the PDK's mismatch models give them.
 
 ---
 by Sanjay Sivakumar · [github.com/SruSanCyborg](https://github.com/SruSanCyborg)

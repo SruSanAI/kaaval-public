@@ -20,7 +20,7 @@
 
 <nav class="r-nav">
   <a class="r-logo" href="/" aria-label="Kaaval home"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="3" fill="var(--accent)"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="1.6"/></svg>Kaaval</a>
-  <div class="r-links"><a href="#s1">Read</a><a href="#s2">Plan</a><a href="#s3">Prove</a><a href="#s4">In the chip</a><a href="#s5">Fix</a></div>
+  <div class="r-links"><a href="#s1">Read</a><a href="#s2">Plan</a><a href="#s3">Prove</a><a href="#s4">In the chip</a><a href="#s5">Timing</a><a href="#s6">Fix</a></div>
   <span class="r-status mono" id="minnal"><span class="d"></span>Minnal</span>
   <button class="r-theme" id="theme" type="button" aria-label="Switch light or dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg></button>
 </nav>
@@ -107,7 +107,28 @@
   </section>
 
   <section class="r-sec" id="s5">
-    <div class="r-sh"><span class="mono">S.05</span><h2>Fix</h2><p>A proposal, never a merge. Every fix is re-simulated at all 45 conditions before it is shown, and you decide whether it goes into your design.</p></div>
+    <div class="r-sh"><span class="mono">S.05</span><h2>Into the timing flow</h2><p>Digital timing tools time every path from library files, and an analog block has none, so the paths across the boundary go untimed. Kaaval measures what the logic needs to know and writes it in the tools' own formats.</p></div>
+    <div class="r-sta">
+      <div class="r-sta-c"><span class="mono r-sta-k">.lib · clocked comparator</span><b>193 ps</b><span>clock to output at 1 mV, our StrongARM latch, tt. 100 ps at 100 mV: a timing model has to name the overdrive.</span>
+        <pre class="r-diff mono">timing () {
+  related_pin : "clk";
+  timing_type : rising_edge;</pre>
+        <span class="r-sta-w">With device mismatch it does not resolve 1 mV (offset σ 7.7 mV), so Kaaval checks the offset before it writes one.</span></div>
+      <div class="r-sta-c"><span class="mono r-sta-k">.sdc · on-chip oscillator</span><b>1.133–3.573 ns</b><span>our 5-stage ring at all 45 conditions (ff −40 °C 1.1× to ss −40 °C 0.9×), duty cycle 46–53 %.</span>
+        <pre class="r-diff mono">create_clock -name osc_clk \
+  -period 1.1334 -waveform {0 0.5573} \
+  [get_pins {u_osc/out}]</pre>
+        <span class="r-sta-w">Jitter is not measured: the designer's budget goes in set_clock_uncertainty.</span></div>
+      <div class="r-sta-c"><span class="mono r-sta-k">library choice · on-chip LDO</span><b>1.378 V</b><span>our 1.8 → 1.5 V regulator's lowest point after a 10 µA → 1 mA step at ss (DC alone: 1.492 V).</span>
+        <pre class="r-diff mono">read_liberty .../
+  sky130_fd_sc_hd__ss_n40C_1v35.lib</pre>
+        <span class="r-sta-w">Setup at the dip, hold at the highest output: ff_n40C_1v56.</span></div>
+    </div>
+    <p class="mono r-small">Kaaval's own test circuits (tests/test_kaaval_liberty.py, test_kaaval_clocks.py, test_kaaval_supply.py) · ngspice · sky130</p>
+  </section>
+
+  <section class="r-sec" id="s6">
+    <div class="r-sh"><span class="mono">S.06</span><h2>Fix</h2><p>A proposal, never a merge. Every fix is re-simulated at all 45 conditions before it is shown, and you decide whether it goes into your design.</p></div>
     <div class="r-fix">
       <pre class="r-diff mono"><span class="h">ref.sch · proposed</span>
 <span class="a">+ XM6 n1 0 VDD VDD sky130_fd_pr__pfet_01v8 L=20 W=0.42</span>
@@ -127,7 +148,7 @@
     <div><b class="v" data-to="14">0</b><span class="mono">power-up sequences for a two-rail block: each rail first, 10 µs / 100 µs / 1 ms gaps, fast and slow</span></div>
   </section>
 
-  <section class="r-sec recent" id="recent" hidden><div class="r-sh"><span class="mono">S.06</span><h2>Your reviews</h2></div><div class="list" id="runs"></div></section>
+  <section class="r-sec recent" id="recent" hidden><div class="r-sh"><span class="mono">S.07</span><h2>Your reviews</h2></div><div class="list" id="runs"></div></section>
 
   <footer class="r-foot mono"><span>Kaaval · srusan</span><span>Pre-silicon simulation on open PDKs. One measured run, not a guarantee. Not foundry sign-off.</span><span>ngspice · sky130 · Muse Spark</span></footer>
 </main>

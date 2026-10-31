@@ -126,3 +126,70 @@ def _sdc(cell, out, pin, name, corner, s, fast, jitter):
         lines.append("# Jitter is not measured (a noiseless transient has none): add the jitter budget with")
         lines.append(f"#   set_clock_uncertainty <ns> [get_clocks {{{name}}}]")
     return "\n".join(lines) + "\n"
+
+
+# ── PLL lock time: how long the logic's reset must hold ─────────────────────────────────────────────────────────────
+def pll_lock(circuit, cell, ports, supplies, grounds, ref, f_ref, ctrl, fb=None, biases=None, corner="tt", temp=27,
+             vscale=1.0, tmax=6e-6, windows=120, band=0.01):
+    """A PLL powered up with its reference running: the time its control voltage `ctrl` settles for good, so a reset
+    released earlier lets the logic run on a clock that is still moving. The control voltage is averaged over every
+    reference period (the ripple of each phase comparison averages out); locked = the last moment that average
+    leaves a band of `band` x supply (at least 5 mV) around its final value. With `fb` (the divided clock the PLL
+    compares), its period at the end must equal the reference's: a loop that settles somewhere else has not locked.
+    → ({lock, ctrl_final, fb_period, ref_period}, None) or (None, why)."""
+    vdd = next(iter(supplies.values())) * vscale
+    lines = [circuit, f"Xcell {' '.join(ports)} {cell}"]
+    for i, (p, v) in enumerate(supplies.items()):
+        lines.append(f"Vsup{i} {p} 0 PWL(0 0 50n {v * vscale:.6g})")
+    for i, g in enumerate(grounds):
+        lines.append(f"Vgnd{i} {g} 0 0")
+    for i, (p, v) in enumerate((biases or {}).items()):
+        lines.append(f"Vbias{i} {p} 0 {v:.6g}")
+    tr = 1 / f_ref
+    lines.append(f"Vref {ref} 0 PULSE(0 {vdd:.6g} 100n {tr / 50:.4g} {tr / 50:.4g} {tr / 2 - tr / 50:.4g} {tr:.6g})")
+    tb = sim.Testbench(sch=f"{cell}.pll.sch", circuit="\n".join(lines), analyses=[".tran"])
+    tb.supplies = lambda: []
+    step = tr / 200
+    t_on = 100e-9
+    n = max(10, min(windows, int((tmax - t_on) / tr)))
+    span = (tmax - t_on) / n
+    ctl = [f"option temp={temp}", f"tran {step:.4g} {tmax:.4g} 0 {step:.4g}"]
+    for k in range(n):
+        a = t_on + k * span
+        ctl.append(f"meas tran w{k} avg v({ctrl}) from={a:.6g} to={a + span:.6g}")
+    if fb:
+        h = vdd / 2
+        ctl += [f"meas tran fa when v({fb})={h:.4g} rise=1 from={tmax - 12 * tr:.6g}",
+                f"meas tran fz when v({fb})={h:.4g} rise=11 from={tmax - 12 * tr:.6g}"]
+    text, err = sim.run(sim.deck(tb, corner, temp, 1.0, control="\n".join(ctl)), timeout=900)
+    if err:
+        return None, err
+    vals = {}
+    for m in re.finditer(r"^(\w+)\s*=\s*([-+0-9.eE]+)", text, re.M):
+        vals[m.group(1).lower()] = float(m.group(2))
+    w = [vals.get(f"w{k}") for k in range(n)]
+    if any(x is None for x in w):
+        return None, "the PLL transient did not finish"
+    final = sum(w[-max(3, n // 20):]) / max(3, n // 20)
+    tol = max(0.005, band * vdd)
+    out_at = [k for k in range(n) if abs(w[k] - final) > tol]
+    lock = t_on + (out_at[-1] + 1) * span if out_at else t_on
+    r = dict(lock=lock, ctrl_final=final, ref_period=tr, settled_for=tmax - lock)
+    if fb:
+        fa, fz = vals.get("fa"), vals.get("fz")
+        r["fb_period"] = (fz - fa) / 10 if fa is not None and fz is not None else None
+        if r["fb_period"] is None or abs(r["fb_period"] - tr) > 0.01 * tr:
+            return None, (f"{fb} does not run at the reference period at the end ({r['fb_period']} s vs {tr:.4g} s): "
+                          "the loop has not locked")
+    if r["settled_for"] < 0.2 * (tmax - t_on):
+        return None, f"{ctrl} is still moving near the end of {tmax * 1e6:g} µs (not locked yet)"
+    return r, None
+
+
+def reset_check(lock, release):
+    """The logic's reset released at `release` (s, from the project's own logic or the designer's bench) against the
+    PLL's lock time → None (fine) or the finding text."""
+    if release is None or lock is None or release >= lock:
+        return None
+    return (f"the reset lets go {release * 1e6:.2f} µs after power-up but the PLL locks only after {lock * 1e6:.2f} µs: "
+            f"for {(lock - release) * 1e6:.2f} µs the logic runs on a clock that is still moving")

@@ -98,6 +98,22 @@ def test_comparator_offset_with_mismatch():
     assert big["wrong"] == 0 and fine["corner"] == "tt_mm", big
 
 
+def test_offset_gate_refuses_an_overdrive_the_comparator_does_not_resolve():
+    """The 1 mV result of test_comparator_offset_with_mismatch (most samples wrong) must not become a .lib; a clean
+    result is written and says so; too few samples is written with its bound. The refusal simulates nothing."""
+    bad = dict(wrong=27, samples=40, errors=0, rate=27 / 40, rate_hi=0.8, overdrive=0.001, corner="tt_mm")
+    good = dict(wrong=0, samples=200, errors=0, rate=0.0, rate_hi=0.019, overdrive=0.02, corner="tt_mm")
+    few = dict(wrong=0, samples=10, errors=0, rate=0.0, rate_hi=0.28, overdrive=0.02, corner="tt_mm")
+    lib = liberty.characterise(SA, "sarm", SA_PORTS, {"vdd": 1.8}, ["vss"], [("clk", "out", "rising_edge")],
+                               offset=bad)
+    assert lib["text"] is None and "27 of 40" in lib["errors"][0] and "does not resolve" in lib["errors"][0]
+    assert liberty.offset_gate(good) == (True, "0 of 200 mismatch samples (tt_mm) decided the wrong way at +-20 mV.")
+    ok, said = liberty.offset_gate(few)
+    assert ok and "up to 28 %" in said
+    assert liberty.offset_gate(None)[0] and "not checked" in liberty.offset_gate(None)[1]
+    assert liberty.offset_gate(bad, clocked=False) == (True, "")     # a plain arc (an inverter) has no offset
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

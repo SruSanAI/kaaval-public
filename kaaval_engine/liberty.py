@@ -30,6 +30,7 @@ from kaaval_engine import sim
 
 SLEWS = [0.05e-9, 0.5e-9]            # input transition times (s), 20-80 %
 LOADS = [2e-15, 20e-15]              # output loads (F)
+MAX_WRONG = 0.05                     # a clock arc's .lib is refused when more mismatch samples decide wrong than this
 
 
 def _deck_body(circuit, cell, ports, supplies, grounds, biases, arc, slew, load, vdd, settle):
@@ -122,10 +123,35 @@ def offset_check(circuit, cell, ports, supplies, grounds, clk, out, inp, inn, vc
                 overdrive=overdrive, corner=mm)
 
 
+def offset_gate(offset, clocked=True):
+    """Should a comparator's .lib be written at this overdrive? offset is offset_check()'s result at the overdrive the
+    model is characterised at. -> (ok, sentence for the library comment). Refused when more than MAX_WRONG of the
+    mismatch samples decide the wrong way; written with a warning when too few samples ran to show the rate is low."""
+    if not clocked:
+        return True, ""
+    if not offset:
+        return True, "Offset with mismatch not checked: the delays assume the comparator decides the right way."
+    od, n, wrong = offset["overdrive"] * 1e3, offset["samples"], offset["wrong"]
+    if not n:
+        return False, f"Offset check at +-{od:g} mV ran no samples ({offset['errors']} failed): not written."
+    said = f"{wrong} of {n} mismatch samples ({offset['corner']}) decided the wrong way at +-{od:g} mV"
+    if offset["rate"] > MAX_WRONG:
+        return False, f"{said}: the comparator does not resolve this overdrive, so its delay here means nothing."
+    if offset["rate_hi"] > MAX_WRONG:
+        return True, f"{said}; with {n} samples up to {offset['rate_hi'] * 100:.0f} % may be wrong (95 % bound)."
+    return True, f"{said}."
+
+
 def characterise(circuit, cell, ports, supplies, grounds, arcs, biases=None, corner="tt", temp=27, slews=SLEWS,
-                 loads=LOADS, settle=20e-9, note=""):
-    """{text: Liberty source, tables: {arc: {...}}, errors: [...]} for one corner. Rail of the arcs: the first supply."""
+                 loads=LOADS, settle=20e-9, note="", offset=None):
+    """{text: Liberty source, tables: {arc: {...}}, errors: [...]} for one corner. Rail of the arcs: the first supply.
+    A clock arc (a clocked comparator) passes offset_gate() first: offset is offset_check()'s result at the overdrive
+    in biases; when the gate refuses, text is None and nothing is simulated."""
     biases = biases or {}
+    ok, said = offset_gate(offset, clocked=any(len(a) > 2 for a in arcs))
+    if not ok:
+        return dict(text=None, tables={}, errors=[said])
+    note = " ".join(x for x in (note, said) if x)
     vdd = next(iter(supplies.values()))
     tables, errors, caps = {}, [], {}
     for arc in arcs:

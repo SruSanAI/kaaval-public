@@ -174,7 +174,7 @@ def _testbench(d, p):
     if d.get("fix_traps"):
         circ, changes = units.correct_circuit(tb.circuit)
         tb = sim.Testbench(sch=tb.sch, circuit=circ, analyses=tb.analyses, params=tb.params, options=tb.options,
-                           nominal=tb.nominal)
+                           nominal=tb.nominal, includes=tb.includes)
         return tb, changes
     return tb, []
 
@@ -196,12 +196,12 @@ def testbench():
     if kind["kind"] == "dynamic":
         nets, win = sim.output_nets(tb), sim.tran_window(tb)
         return jsonify({"ok": True, "dut_inst": inst, "dut": dut and os.path.relpath(dut, root), "nominal": {},
-                        "outputs": nets, "window": win, **kind})
+                        "outputs": nets, "window": win, "include_note": tb.include_note(), **kind})
     with _SEM:
         ops, err = sim.op_points(tb, *checks.NOMINAL)
     if err or not ops:
         return jsonify({"ok": False, "error": err or "no transistors", "dut_inst": inst,
-                        "dut": dut and os.path.relpath(dut, root)})
+                        "dut": dut and os.path.relpath(dut, root), "include_note": tb.include_note()})
     with _LOCK:
         _SWEEPS[(root, p)] = {checks.NOMINAL: (ops, None)}
     return jsonify({"ok": True, "dut_inst": inst, "dut": dut and os.path.relpath(dut, root),

@@ -63,6 +63,27 @@ def test_foundry_standard_cells_are_never_powered_up():
     assert any("foundry standard cell" in l for l in logs), logs
 
 
+def test_pad_drive_only_for_cells_no_other_cell_uses():
+    """Backtest v2: a flash ADC's comparator and ladder rung got 'cannot drive the pad' although they sit inside the
+    ADC. A cell another cell instantiates gets no pad drive test; the outer one does."""
+    from app import planner
+    cells = [dict(cell="xschem/adc.sch", ports=["vdd", "vss", "out0"], devices=40,
+                  netlist="x1 a b vdd vss y comparator\nx2 c d vdd vss z comparator\nXM1 out0 y vss vss sky130_fd_pr__nfet_01v8 L=1 W=1"),
+             dict(cell="xschem/comparator.sch", ports=["vdd", "vss", "inp", "inn", "out"], devices=9,
+                  netlist="XM1 out inp vss vss sky130_fd_pr__nfet_01v8 L=1 W=1")]
+    kinds, logs = [], []
+    real = planner.engine.cells, planner.engine.plan
+    planner.engine.cells = lambda ws: cells
+    planner.engine.plan = lambda ws, ep: kinds.append((ep["cell"], ep["kind"])) or dict(ok=True, findings=[])
+    try:
+        planner._rules("ws", lambda *a, **k: logs.append(a[1]))
+    finally:
+        planner.engine.cells, planner.engine.plan = real
+    assert ("xschem/adc.sch", "drive") in kinds and ("xschem/comparator.sch", "drive") not in kinds, kinds
+    assert ("xschem/comparator.sch", "powerup") in kinds                      # still powered up on its own
+    assert any("used inside xschem/adc.sch" in l for l in logs), logs
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

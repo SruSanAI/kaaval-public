@@ -62,11 +62,13 @@ class Testbench:
     params: list = field(default_factory=list)     # designer's .param / .ic / .nodeset lines
     options: dict = field(default_factory=dict)    # designer's simulator options from SAFE_OPT
     nominal: list = field(default_factory=list)    # designer's .params whose random value (agauss, ...) was fixed
+    includes: list = field(default_factory=list)   # files the designer's commands .include (named here, never read)
+    floating: list = field(default_factory=list)   # pins a test leaves undriven: kept out of the circuit's state
 
     @classmethod
     def from_sch(cls, sch):
         text = open(sch, errors="replace").read()
-        analyses, params, options, nominal = [], [], {}, []
+        analyses, params, options, nominal, includes = [], [], {}, [], []
         for kind, f, props in parse(text):
             if kind != "C" or not any(k in f[0] for k in ("code", "simulator_commands")):
                 continue
@@ -77,6 +79,10 @@ class Testbench:
             for line in val.replace("\\n", "\n").splitlines():
                 s = line.strip()
                 if not s or s.startswith("*"):
+                    continue
+                m = re.match(r"""^\.inc(?:lude)?\s+\\?["']?([^"'\\\s]+)""", s, re.I)   # (\" inside a property)
+                if m:
+                    includes.append(m.group(1))
                     continue
                 if re.match(r"^\s*\.?options?\b", s, re.I):
                     for k, v in re.findall(r"(\w+)\s*=\s*(\S+)", s):
@@ -94,7 +100,21 @@ class Testbench:
                     m = ANALYSIS.match(s)
                     if m and not s.startswith("."):
                         analyses.append("." + m.group(1).lower() + m.group(2))
-        return cls(sch=sch, circuit=N.netlist(sch), analyses=analyses, params=params, options=options, nominal=nominal)
+        return cls(sch=sch, circuit=N.netlist(sch), analyses=analyses, params=params, options=options,
+                   nominal=nominal, includes=includes)
+
+    def include_note(self):
+        """When the testbench takes part of its setup from files it .includes (sources, stimuli, models), a sentence
+        saying so: Kaaval never reads them, so whatever they define (often the supplies and inputs) is missing from
+        its deck, and a file not in the repository at all (made on the designer's machine) is named as such."""
+        if not self.includes:
+            return ""
+        here = os.path.dirname(os.path.abspath(self.sch))
+        gone = [f for f in self.includes if not os.path.isfile(os.path.join(here, os.path.expanduser(f)))]
+        s = (f"The testbench takes part of its setup from {', '.join(self.includes)} (its own .include, which Kaaval "
+             "does not read), so the sources or stimuli defined there are missing from this simulation")
+        return s + (f"; {', '.join(gone)} {'is' if len(gone) == 1 else 'are'} not in the repository at all"
+                    " (made on the designer's machine)." if gone else ".")
 
     def supplies(self):
         """(name, +node, value) of independent DC voltage sources driving a supply-named net."""
@@ -698,6 +718,12 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
         moving = [k[2:-1] for k in keys[len(isup):] if trv[k] is not None and prev[k] is not None and
                   abs(trv[k] - prev[k]) > 0.01]
         osc = {k[2:-1]: swing[k] for k in keys[len(isup):] if swing.get(k) is not None and swing[k] > 0.05}
+        # a pin the test leaves undriven settles wherever leakage puts it: it is not part of the circuit's state (its
+        # swing, drift or value never makes a finding or a step-check disagreement); its swing is kept apart
+        fl = {f.lower() for f in getattr(tb, "floating", ()) or ()}
+        fsw = {n: v for n, v in osc.items() if n.lower() in fl}
+        osc = {n: v for n, v in osc.items() if n.lower() not in fl}
+        moving = [n for n in moving if n.lower() not in fl]
         if osc:
             # a swing must survive a stiffer integration method and a 5x finer step to count: trapezoidal ringing and
             # step-size artefacts do not
@@ -709,8 +735,9 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
             if not m or abs(float(m.group(1)) - osc[k0]) > 0.3 * osc[k0]:
                 osc = {}
                 moving = moving or [k0]           # unresolved: neither a verified swing nor a settled state
-        r = dict(i_op=isum(opv), i_end=isum(trv), i_prev=isum(prev), nodes={k[2:-1]: (opv[k], trv[k]) for k in keys[len(isup):]},
-                 moving=moving, swing=osc, ramp=ramp, settle=settle,
+        r = dict(i_op=isum(opv), i_end=isum(trv), i_prev=isum(prev),
+                 nodes={k[2:-1]: (opv[k], trv[k]) for k in keys[len(isup):] if k[2:-1].lower() not in fl},
+                 moving=moving, swing=osc, floating_swing=fsw, ramp=ramp, settle=settle,
                  op_clean=not re.search(r"(?i)stepping failed|singular matrix", op_txt), confirmed=False)
         # a settled power-up state that differs from the DC answer is checked as a DC solution in its own right: the
         # DC solver, seeded with every node's power-up value, must stay there. Capacitors are open in DC, so states

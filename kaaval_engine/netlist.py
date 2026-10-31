@@ -114,11 +114,11 @@ def _key(x, y):
 
 
 def expand(name):
-    """xschem bus notation to bits: 'a[6:1]' -> a[6] .. a[1]; 'a[0:3]' ascending; comma lists concatenate;
-    'a[2]' or a plain name stay one bit."""
+    """xschem bus notation to bits: 'a[6:1]' or 'a[6..1]' -> a[6] .. a[1]; 'a[0:3]' ascending; comma lists
+    concatenate; 'a[2]' or a plain name stay one bit."""
     out = []
     for part in [p for p in str(name).split(",") if p]:
-        m = re.fullmatch(r"(.*)\[(\d+):(\d+)\](.*)", part)
+        m = re.fullmatch(r"(.*)\[(\d+)(?::|\.\.)(\d+)\](.*)", part)
         if not m:
             out.append(part)
             continue

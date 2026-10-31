@@ -54,12 +54,28 @@ def from_layout(root, timeout=120):
     if not rel:
         return None, (f"no layout of the top cell {top} in the repository" if top else
                       "info.yaml names no top_module, so the layout's top cell is unknown")
+    text, err = cell(root, top, rel, timeout)
+    if not text:
+        return None, err
+    head = (f"* {top}: netlist extracted by Kaaval from the layout {rel} with Magic (ext2spice lvs: devices and\n"
+            "* connectivity, no parasitics). The repository holds no schematic or netlist of it.\n")
+    return head + text, (f"No schematic or netlist in the repository: Kaaval extracted {top}'s netlist from its layout "
+                         f"({rel}) with Magic, devices only (no parasitics), as {OUT}/{top}.spice.")
+
+
+def cell(root, top, rel, timeout=120, parasitics=False, flat=False):
+    """(SPICE text of one layout cell, or None, error): Magic's ext2spice lvs of `top`, whose layout is at `rel`.
+    parasitics=True keeps the extracted wire and junction capacitances (every one, as Magic computes them; no wire
+    resistance), the post-layout netlist a simulation compares with the schematic. flat=True writes one transistor-level
+    cell (ext2spice hierarchy off), as a layout-vs-schematic comparison wants."""
     dirs = sorted({os.path.dirname(os.path.join(d, f)) for d, ds, fs in os.walk(root) for f in fs if f.endswith(".mag")
                    and not any(p.startswith(".") for p in os.path.relpath(d, root).split(os.sep))})
     with tempfile.TemporaryDirectory(prefix="kaaval_ext_") as t:
-        script = "".join(f"addpath {{{d}}}\n" for d in dirs) + (
-            f"load {top}\nselect top cell\nextract path {{{t}}}\nextract all\next2spice lvs\n"
-            f"ext2spice -p {{{t}}} -o {{{os.path.join(t, top + '.spice')}}}\nquit -noprompt\n")
+        mode = ("ext2spice lvs\next2spice cthresh 0\next2spice extresist off\n" if parasitics else "ext2spice lvs\n")
+        mode += "ext2spice hierarchy off\next2spice subcircuit top on\n" if flat else ""
+        script = ("".join(f"addpath {{{d}}}\n" for d in dirs) +
+                  f"load {top}\nselect top cell\nextract path {{{t}}}\nextract all\n" + mode +
+                  f"ext2spice -p {{{t}}} -o {{{os.path.join(t, top + '.spice')}}}\nquit -noprompt\n")
         open(os.path.join(t, "extract.tcl"), "w").write(script)
         env = dict(os.environ, PDK_ROOT=os.path.dirname(PDK_ROOT), PDK=os.path.basename(PDK_ROOT))
         try:
@@ -71,8 +87,4 @@ def from_layout(root, timeout=120):
         if not os.path.isfile(out):
             tail = " ".join((p.stdout + p.stderr).split()[-30:])
             return None, f"layout extraction of {top} wrote no netlist ({tail})"
-        text = open(out, errors="replace").read()
-    head = (f"* {top}: netlist extracted by Kaaval from the layout {rel} with Magic (ext2spice lvs: devices and\n"
-            "* connectivity, no parasitics). The repository holds no schematic or netlist of it.\n")
-    return head + text, (f"No schematic or netlist in the repository: Kaaval extracted {top}'s netlist from its layout "
-                         f"({rel}) with Magic, devices only (no parasitics), as {OUT}/{top}.spice.")
+        return open(out, errors="replace").read(), None

@@ -223,7 +223,10 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       'analog/low_phase_margin': 'This loop rings: its margins are thin.',
       'analog/sequence_dependent': 'This circuit works only if the chip powers up in the right order.',
       'analog/overstress': 'A 1.8 V transistor sees a 3.3 V voltage: it will wear out or break.',
-      'analog/weak_output': 'This output cannot drive the pad: what you measure depends on your meter.'};
+      'analog/weak_output': 'This output cannot drive the pad: what you measure depends on your meter.',
+      'layout/devices_differ': 'The layout builds other devices than the schematic: the chip is not the circuit you simulated, or the schematic is out of date.',
+      'layout/sizes_differ': 'The layout draws its devices at other sizes than the schematic.',
+      'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.'};
     const plain = PLAIN[f.rule] ? `<div class="plain">${PLAIN[f.rule]}</div>` : '';
     const st = (f.detail && f.detail.states) || [];
     const states = f.rule === 'analog/two_states' && st.length === 2 ? `<div class="states num">${st.map((x, i) =>

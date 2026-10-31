@@ -162,7 +162,7 @@ SU_TEMPS = TEMPS
 SU_VSCALES = [0.9, 1.0]
 
 
-def startup(ssweep, vtol=0.1):
+def startup(ssweep, vtol=0.1, floating=()):
     """Power-up findings from sim.startup_corner results {(corner, temp, vscale): (result, err)}.
 
     At each condition the circuit is powered up from 0 V and held with constant sources, then compared with the
@@ -175,8 +175,12 @@ def startup(ssweep, vtol=0.1):
       marginal     the power-up lands in different states depending on the simulator's time step (sim.startup_checked
                    found no two steps that agree): nothing pushes the circuit firmly into its working state, so on
                    silicon the state it reaches depends on noise and on how the supply rises.
-    A node still drifting at the end proves nothing and is not reported."""
-    osc, two, dead, marg = [], [], [], []
+    A node still drifting at the end proves nothing and is not reported. `floating` names the cell's pins the test
+    leaves undriven: a pin with nothing on it settles wherever leakage puts it, so its swing alone is no loop's
+    instability; it is reported as an untested input (info), never as an oscillation."""
+    osc, two, dead, marg, flo = [], [], [], [], []
+    floating_names = list(floating)
+    floating = {f.lower() for f in floating}
     for c, (r, e) in ssweep.items():
         if e and str(e).startswith("undetermined"):
             marg.append((c, e))
@@ -188,8 +192,14 @@ def startup(ssweep, vtol=0.1):
                 abs(r["i_end"] - r.get("i_prev", r["i_end"])) < 0.05 * r["i_op"]:
             dead.append((c, r))
             continue
+        if r.get("floating_swing"):                 # an undriven pin moved (sim.startup_corner kept it apart)
+            flo.append((c, *max(r["floating_swing"].items(), key=lambda x: x[1])))
         if r.get("swing"):
-            n, pp = max(r["swing"].items(), key=lambda x: x[1])
+            real = {k: v for k, v in r["swing"].items() if k.lower() not in floating}
+            if not real:                              # only undriven pins move: nothing is concluded here
+                flo.append((c, *max(r["swing"].items(), key=lambda x: x[1])))
+                continue
+            n, pp = max(real.items(), key=lambda x: x[1])
             osc.append((c, n, pp, r))
             continue
         if r.get("moving"):
@@ -209,8 +219,11 @@ def startup(ssweep, vtol=0.1):
                                 f"supply current settles at {_amps(r['i_end'])} while its DC analysis reports a "
                                 f"working bias of {r['i_op'] * 1e6:.1f} µA (worst {c[0]}, {c[1]} °C, supply ×{c[2]}; "
                                 f"ramp {r['ramp'] * 1e6:.0f} µs, held {r['settle'] * 1e6:.0f} µs). The zero-current "
-                                f"state is a valid solution and nothing pushes the circuit out of it: it needs a "
-                                f"start-up circuit."))
+                                f"state is a valid solution and nothing pushes the circuit out of it: " +
+                                (f"it needs a start-up circuit." if not floating_names else
+                                 f"this test left {', '.join(sorted(floating_names))} undriven (from 0 V), so it may "
+                                 f"be those inputs holding it off rather than a missing start-up circuit: bias "
+                                 f"{'it' if len(floating_names) == 1 else 'them'} to confirm.")))
     if osc:
         c, node, pp, r = max(osc, key=lambda x: x[2])
         out.append(dict(rule="analog/oscillates", severity="warn", device=node, worst=c, n_bad=len(osc), n=n,
@@ -218,7 +231,17 @@ def startup(ssweep, vtol=0.1):
                         message=f"After power-up the circuit never settles: {node} keeps swinging {pp * 1e3:.0f} mV "
                                 f"peak-to-peak at {len(osc)}/{n} conditions (worst {c[0]}, {c[1]} °C, supply ×{c[2]}). "
                                 f"The operating point its DC analysis reports is not where it rests: a loop is "
-                                f"unstable."))
+                                f"unstable." + (f" This test left {', '.join(sorted(floating_names))} undriven, so the "
+                                                f"swing may come from a floating input: bias "
+                                                f"{'it' if len(floating_names) == 1 else 'them'} to confirm."
+                                                if floating_names else "")))
+    if flo and not osc:
+        c, node, pp = max(flo, key=lambda x: x[2])
+        out.append(dict(rule="analog/floating_input", severity="info", device=node, worst=c, n_bad=len(flo), n=n,
+                        conds=[list(x[0]) for x in flo],
+                        message=f"{node} is not driven in this test and still moves after power-up ({pp * 1e3:.0f} mV "
+                                f"peak-to-peak at {len(flo)}/{n} conditions): with a floating input nothing is "
+                                f"concluded about this cell's stability. Give {node} a bias to test it."))
     if two:
         c, (node, a, b), r = max(two, key=lambda x: abs(x[1][1] - x[1][2]))
         out.append(dict(rule="analog/two_states", severity="warn", device=node, worst=c, n_bad=len(two), n=n,
@@ -412,13 +435,19 @@ def overstress(per, models):
                          f"still off.")]
 
 
-def drive(per, ports, board_min=1e6, tol=0.02, loads=(1e7, 1e6, 1e5, 1e4)):
+def drive(per, ports, board_min=1e6, tol=0.02, loads=(1e7, 1e6, 1e5, 1e4), floating=()):
     """Can an output that leaves the chip drive what the board puts on it? per: {(corner, temp, vscale): ({pad index:
     [volts open, then at each of `loads`]}, err)} (sim.drive_corner). Output resistance is estimated from the open and
     board_min-loaded voltages, R_out = R (V_open - V) / V.
       weak_output   the pad's voltage moves by more than tol with board_min (Tiny Tapeout's recommended minimum
-                    board pull-down) to ground: the reading depends on the meter or board."""
+                    board pull-down) to ground: the reading depends on the meter or board.
+    A reading that rises under a heavier load is no source's behaviour (something floats): never a finding. An output
+    that falls to about 0 V under even 10 MOhm has nothing driving it (high impedance) and is said so, not given a
+    resistance. `floating` names input pins the test left undriven; a finding made with them says so."""
     out = []
+    floating = sorted(floating)
+    caveat = (f" This test left {', '.join(floating)} undriven: bias {'it' if len(floating) == 1 else 'them'} to "
+              "confirm." if floating else "")
     for i, port in enumerate(ports):
         worst, n = None, 0
         for c, (r, e) in per.items():
@@ -429,19 +458,25 @@ def drive(per, ports, board_min=1e6, tol=0.02, loads=(1e7, 1e6, 1e5, 1e4)):
             v0, vb = v[0], v[1 + list(loads).index(board_min)]
             if abs(v0) < 0.05:
                 continue                      # an output resting near 0 V has nothing to lose to a pull-down
+            mags = [abs(x) for x in v]
+            if any(b > a + 0.01 * abs(v0) + 1e-3 for a, b in zip(mags, mags[1:])):
+                continue                      # it rose under a heavier load: not a loaded source, something floats
             shift = abs(v0 - vb) / abs(v0)
             if worst is None or shift > worst[0]:
                 worst = (shift, c, v)
         if worst and worst[0] > tol:
             shift, c, v = worst
-            rout = board_min * (v[0] - v[2]) / v[2] if v[2] else float("inf")
+            hiz = abs(v[1]) < 0.05 * abs(v[0])        # gone under 10 MOhm already: nothing drives this output
+            rout = float("inf") if hiz or not v[2] else board_min * (v[0] - v[2]) / v[2]
             at = ", ".join(f"{fmt_ohm(l)} {x:.3f} V" for l, x in zip(loads, v[1:]))
+            what = "nothing driving it (high impedance)" if hiz else f"about {fmt_ohm(rout)} output resistance"
             out.append(dict(rule="analog/weak_output", severity="warn", device=port, worst=c, n=n, rout=rout,
-                            volts=v, message=f"{port} has about {fmt_ohm(rout)} output resistance and nothing to "
+                            volts=v, message=f"{port} has {what} and nothing to "
                             f"drive the pad: {v[0]:.3f} V unloaded, {at} to ground (at {c[0]}, {c[1]} \u00b0C, supply "
                             f"x{c[2]:g}). Tiny Tapeout's board guide asks for pull-downs of at least "
                             f"{fmt_ohm(board_min)}, which already moves it {shift * 100:.1f} %: what a meter or the "
-                            f"board reads depends on its load. A buffer between the block and the pad fixes it."))
+                            f"board reads depends on its load. A buffer between the block and the pad fixes it."
+                            + caveat))
     return out
 
 

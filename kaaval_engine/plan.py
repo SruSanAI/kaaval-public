@@ -275,6 +275,7 @@ def _run(plan, root, on_result=None):
     if errs:
         return dict(ok=False, errors=errs)
     tb = compile_bench(plan, root)
+    tb.floating = undriven(plan, root)               # (their nodes never decide a finding: sim.startup_corner)
     # the planner's supplies are the bench's supplies, whatever their names
     names = {f"vplan{i}" for i in range(len(plan["supplies"]))}
     tb.supplies = lambda: [(f"Vplan{i}", p, float(v)) for i, (p, v) in enumerate(plan["supplies"].items())] \
@@ -304,7 +305,8 @@ def _run(plan, root, on_result=None):
                 if on_result:
                     on_result((c,) + k, *r)
         rows = [dict(corner=c, temp=t, vscale=v, error=e, volts=r) for (c, t, v), (r, e) in per.items()]
-        return dict(ok=True, findings=checks.drive(per, [p["port"] for p in plan["pads"]], BOARD_MIN), results=rows,
+        return dict(ok=True, findings=checks.drive(per, [p["port"] for p in plan["pads"]], BOARD_MIN,
+                                                        floating=undriven(plan, root)), results=rows,
                     bench=bench)
     if plan["kind"] == "domains":
         sup = list(plan["supplies"].items())
@@ -361,7 +363,76 @@ def _run(plan, root, on_result=None):
                  **({} if not r else dict(i_op=r["i_op"], i_end=r["i_end"], nodes=r["nodes"],
                                           confirmed=r.get("confirmed"), swing=r.get("swing"))))
             for (c, t, v), (r, e) in sw.items()]
-    return dict(ok=True, findings=checks.startup(sw), results=rows, bench=bench)
+    return dict(ok=True, findings=checks.startup(sw, floating=undriven(plan, root)), results=rows, bench=bench)
+
+
+def undriven(plan, root):
+    """The cell's pins this plan connects nothing to (no supply, ground, bias, control, tie, load or pad)."""
+    rel = str(plan.get("cell", ""))
+    if "#" in rel:
+        ports = spice_cells.load(root, rel)[1] or []
+    else:
+        p = _cell(plan, root)
+        ports = re.findall(r"^C \{devices/(?:ipin|opin|iopin)\.sym\}[^{]*\{[^}]*?lab=([^\s}]+)",
+                           open(p, errors="replace").read(), re.M) if p else []
+    used = set(plan.get("supplies") or {}) | set(plan.get("grounds") or [])
+    used |= {t[k] for t in plan.get("ties") or [] for k in ("a", "b")}
+    used |= {x.get("port") for k in ("biases", "controls", "loads", "pads") for x in plan.get(k) or []}
+    used = {str(u).lower() for u in used if u}
+    circ = _cell_circuit(plan, root) or ""
+    return [q for q in ports if q.lower() not in used and not dc_path(circ, q)]
+
+
+MOS = re.compile(r"(?i)^sky130_fd_pr__(n|p)fet\w*$|^gf180mcu_fd_pr__(n|p)fet\w*$")
+
+
+def dc_path(circuit, net):
+    """True when `net` reaches anything but MOS gates and capacitors at the top level of `circuit`, following it into
+    the design's own subcircuits: a pin with no DC path floats unless the test drives it. A device the netlist does not
+    define (a standard cell, an unknown model) counts as a DC path, so a pin is called floating only when it surely is."""
+    subs, top, cur = {}, [], None
+    for line in circuit.splitlines():
+        t = re.sub(r"'[^']*'|\{[^}]*\}", "", line).split()
+        if not t or t[0].startswith("*"):
+            continue
+        if t[0].lower() == ".subckt":
+            cur = t[1].lower()
+            subs[cur] = ([x.lower() for x in t[2:] if "=" not in x], [])
+            continue
+        if t[0].lower().startswith(".ends"):
+            cur = None
+            continue
+        if not t[0].startswith((".", "+")):
+            (subs[cur][1] if cur else top).append([x for x in t if "=" not in x])
+
+    def reaches(lines, n, seen):
+        for t in lines:
+            k = t[0][0].lower()
+            if k == "c":
+                continue
+            if k == "m":
+                if n in [x.lower() for x in (t[1:2] + t[3:4])]:
+                    return True                       # drain or source (the gate and body carry no DC)
+                continue
+            if k == "x":
+                pins, name = [x.lower() for x in t[1:-1]], t[-1].lower()
+                if n not in pins:
+                    continue
+                if MOS.match(name):
+                    if n in (pins[0:1] + pins[2:3]):
+                        return True
+                    continue
+                if name not in subs or name in seen:
+                    return True                       # not defined here (or recursive): assume it conducts
+                inner = subs[name][0]
+                for i, p in enumerate(pins):
+                    if p == n and i < len(inner) and reaches(subs[name][1], inner[i], seen | {name}):
+                        return True
+                continue
+            if n in [x.lower() for x in t[1:3]]:
+                return True                           # R, L, D, V, I, E, ...: a DC path
+        return False
+    return reaches(top, net.lower(), frozenset())
 
 
 def _odd(r, ref=None, vtol=0.1):

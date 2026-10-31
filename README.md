@@ -55,6 +55,27 @@ the finding, the test plan, every condition measured, and the testbench at the w
 deck (your cell unchanged, the standard sky130 `.lib` line, no server paths). For a power-up finding the deck runs
 both sides: the DC answer, then the same power-up from 0 V the engine ran.
 
+## Layout against schematic: is the chip the circuit you simulated?
+
+A designer simulates the schematic; the fab builds the layout. Every cell a repository draws both ways (xschem
+`<cell>.sch` and Magic `<cell>.mag`) is compared at transistor level: Magic extracts the layout's devices, our netlister
+flattens the schematic (with the PDK's standard cells it uses), and Netgen, the open LVS tool, matches them with the
+sky130 setup (`kaaval_engine/layout_check.py`). A review reports:
+
+- **different devices**: a threshold flavour or resistor type changed (`pfet_01v8` drawn where the schematic has
+  `pfet_01v8_hvt`), or devices missing or added after Netgen's own merging of parallel devices;
+- **different sizes**: the same circuit with other W / L / values (a warning above 5 %, a note below);
+- **dummies**: extra devices that are off, shorted, or drive nothing, said so instead of an error.
+
+It judges only what it can see whole: a schematic that uses cells it cannot resolve (a library outside the
+repository), or a difference only in pin or net names, is reported as not judged. A mismatch shows that the committed
+layout and schematic differ: either the chip is not the circuit that was simulated, or the schematic is out of date.
+
+Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both ways, median 0.24 s per cell):
+241 match; 54 warnings in 25 repositories (46 with different devices, 8 with sizes more than 5 % off), 13 small size
+notes and 5 with layout dummies; 98 differ only in names and 24 use cells we cannot resolve (not judged); 16 could not
+be compared. Counts only; results on other people's designs are not published.
+
 ## Kaaval Zoom: the whole chip, down to each transistor
 
 A review's **Chip view** draws the project's whole Tiny Tapeout tile from its top module and `info.yaml`, read as text:

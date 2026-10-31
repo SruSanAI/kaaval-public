@@ -55,6 +55,11 @@ def test_repeated_property_keeps_its_first_value():
         "C {devices/lab_pin.sym} 0 -30 0 0 {name=p1 lab=a}\nC {devices/lab_pin.sym} 0 30 0 0 {name=p2 lab=b}\n")
     text = N.netlist(os.path.join(d, "r.sch"))
     assert re.search(r"^R1 a b 1k", text, re.M) and "V_JUNK" not in text, text
+def test_bus_ranges_with_two_dots():
+    """xschem writes bus ranges as a[6:0] or a[6..0]; with '..' an instance array xcell[3..0] was one instance with
+    bus nets (a layout check then saw 50 devices against 8). Each copy takes its bits, in order."""
+    assert N.expand("v[2..0],IN") == ["v[2]", "v[1]", "v[0]", "IN"] and N.expand("c[0..1]") == ["c[0]", "c[1]"]
+    assert N.expand("v[2:0]") == N.expand("v[2..0]")
 
 
 if __name__ == "__main__":

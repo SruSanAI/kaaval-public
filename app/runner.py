@@ -12,7 +12,7 @@ import itertools, os, re, shutil, subprocess, threading, time
 
 from app import engine, inputs, planner, store
 from guard import sch_svg
-from kaaval_engine import extract
+from kaaval_engine import extract, layout_check
 
 WORK = os.path.expanduser(os.environ.get("KAAVAL_WORK", "~/.kaaval/repos"))
 MAX_REPO_MB = 300
@@ -269,7 +269,13 @@ def review(rid, src, root=None):
                                         (f" and {len(xs) - 3} more" if len(xs) > 3 else ""),
                                         device=devs[0] if devs else "", detail=dict(x, devices=devs, files=files,
                                                                                     occurrences=len(xs))))
-        lv.stage("audit", "done", f"{a['devices']} devices · {n_units} trap(s)")
+        lay, lay_f, lay_note = layout_check.review(root)       # the layout against the schematic it should build
+        for f in lay_f:
+            store.add_finding(rid, dict(f, kind="note" if f["severity"] == "info" else "risk"))
+        if lay_note:
+            store.event(rid, "audit", lay_note, "warn" if lay_f else "info")
+        lv.stage("audit", "done", f"{a['devices']} devices · {n_units} trap(s)"
+                 + (f" · {len(lay_f)} layout mismatch(es)" if lay else ""))
         store.event(rid, "audit", f"Read {a['netlists']} schematics/netlists ({a['devices']} devices) as text; "
                                   f"{n_units} units trap(s)")
 
@@ -332,6 +338,8 @@ def review(rid, src, root=None):
                 if not nom or nom["error"]:
                     lv.stage("nominal", "error", (nom or {}).get("error", "no result"))
                     lv.stage("pvt", "skipped")
+                    store.event(rid, "nominal", f"The designer's transient did not run: {(nom or {}).get('error')}"
+                                + (f" {tbr['include_note']}" if tbr.get("include_note") else ""), "error")
                 else:
                     n0 = nom["outputs"]
                     desc = "; ".join(f"{k} {v['freq'] / 1e6:.3g} MHz" if v["freq"] > 0 else f"{k} {v['mean']:.3f} V"
@@ -394,7 +402,8 @@ def review(rid, src, root=None):
             elif not tbr.get("ok"):
                 lv.stage("nominal", "error", tbr.get("error", ""))
                 lv.stage("pvt", "skipped")
-                store.event(rid, "nominal", f"The operating point did not run: {tbr.get('error')}", "error")
+                store.event(rid, "nominal", f"The operating point did not run: {tbr.get('error')}"
+                            + (f" {tbr['include_note']}" if tbr.get("include_note") else ""), "error")
             else:
                 nom = tbr["nominal"]
                 sat = {k for k, v in nom.items() if v["region"] == "sat"}

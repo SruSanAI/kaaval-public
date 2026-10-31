@@ -308,6 +308,19 @@ def rail_volts(port, netlist):
 FOUNDRY_CELL = re.compile(r"(?i)^(sky130_(fd|ef|osu)_(sc|io)\w*|gf180mcu_fd_(sc|io)\w*)__")
 
 
+def used_inside(cells, name):
+    """{cell name: a cell that instantiates it} over the design's own cells: a block used inside another block is
+    internal, and its outputs never reach a pad (an instance line ends with the subcircuit's name)."""
+    names = {name(c) for c in cells}
+    out = {}
+    for c in cells:
+        for line in (c.get("netlist") or "").splitlines():
+            t = line.split()
+            if len(t) > 2 and t[0][:1].lower() == "x" and t[-1].lower() in names and t[-1].lower() != name(c):
+                out.setdefault(t[-1].lower(), c["cell"])
+    return out
+
+
 def _rules(ws, log, max_cells=20, docs=""):
     """The no-model baseline: every cell whose pins name a supply and a ground is powered up at all 45 conditions.
     3.3 V for pins named like the analog 3.3 V rail, 1.8 V otherwise. Cells with two supply voltages or pins named
@@ -321,8 +334,10 @@ def _rules(ws, log, max_cells=20, docs=""):
         return re.sub(r"(?i)_parax$|\.mag$", "", n).lower()
     rank = lambda c: (0 if "#" not in c["cell"] else 2 if re.search(r"(?i)\.(sim|lvs|pex|rc)\.|parax|_rc\b|pex", c["cell"]) else 1)
     best = {}
-    for c in sorted(engine.cells(ws), key=lambda c: (rank(c), -c.get("devices", 0))):
+    cells = engine.cells(ws)
+    for c in sorted(cells, key=lambda c: (rank(c), -c.get("devices", 0))):
         best.setdefault(name(c), c)
+    inner = used_inside(cells, name)
     for c in sorted(best.values(), key=lambda c: -c.get("devices", 0))[:max_cells]:
         sup = [p for p in c["ports"] if SUP.match(p)]
         gnd = [p for p in c["ports"] if GND.match(p)]
@@ -357,7 +372,10 @@ def _rules(ws, log, max_cells=20, docs=""):
                               corners=["tt", "ss", "ff"], temps=[-40, 27, 125], vscales=[1.0, 1.1],
                               why="1.8 V devices next to a 3.3 V rail; rail voltages guessed: " + guess))
         outs = [p for p in c["ports"] if OUT.match(p) and p not in sup + gnd]
-        if outs:
+        if outs and name(c) in inner:
+            log("plan", f"rules: {c['cell']} no pad drive test: it is used inside {inner[name(c)]}, so its outputs "
+                        f"do not reach a pad")
+        elif outs:
             plans.append(dict(cell=c["cell"], kind="drive", supplies=ep["supplies"], grounds=gnd, loads=[],
                               pads=[{"port": p} for p in outs[:2]], corners=CORNERS, temps=[-40, 27, 125],
                               vscales=[1.0], why="outputs by pin names, each on a Tiny Tapeout pad; rail voltages "

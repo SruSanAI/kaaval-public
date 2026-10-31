@@ -97,7 +97,9 @@ A comparator's timing model only means something at an overdrive it resolves. `l
 mismatch corner (every device drawn on its own, a seed per sample) and counts wrong decisions at ±overdrive: our
 StrongARM latch decides wrong in 30 of 40 samples at ±1 mV and in none at ±20 mV, an input offset of σ 7.7 mV
 (bisection, 20 samples). Widening its devices up to 3x the area did not change that: at minimum length, the fix is
-longer devices or offset calibration, and the .lib belongs at the overdrive it resolves.
+longer devices or offset calibration, and the .lib belongs at the overdrive it resolves. The writer enforces it: `characterise(..., offset=...)`
+refuses a comparator's .lib when more than 5 % of the mismatch samples decide wrong at the characterised overdrive,
+and writes the count (or, with too few samples, its 95 % bound) into the library's comment.
 
 A PLL's clock is not usable until it locks, so `clocks.pll_lock` measures when the control voltage settles for good
 (and that the divided clock then runs at the reference period), and `clocks.reset_check` flags a reset released

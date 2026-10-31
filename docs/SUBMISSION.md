@@ -60,12 +60,16 @@ The no-model baseline is labelled as such in the UI.
 | Time | Shot |
 |---|---|
 | 0:00–0:20 | Hero: the reference dead at 30 of 45 conditions, alive at 45 with the fix. One sentence of problem. |
-| 0:20–0:50 | Paste a Tiny Tapeout repo. Muse Spark's plan streams in: blocks, pin roles with evidence, tests chosen. |
+| 0:20–0:50 | Upload our own demo tile (`examples/demo_tapeout`, a zip): Muse Spark's plan streams in: blocks, pin roles with evidence, tests chosen. |
 | 0:50–1:30 | Proving: the 45-condition grid fills. A finding opens: failing device on its sheet, waveform on click. |
 | 1:30–2:00 | Sequence matrix: rail order × condition. Click the 3.3 V-leads-by-1-ms cell: stays off. |
 | 2:00–2:30 | Chip view, down to the transistor. Into the timing flow: SDC clock, supply corner, `.lib` refused at ±1 mV. |
 | 2:30–2:50 | Fix proposed, re-simulated at 45 conditions. Download the ngspice deck a designer can run without Kaaval. |
 | 2:50–3:00 | Repo link, "pre-silicon simulation on open PDKs, not foundry sign-off". |
+
+Recording: `~/Downloads/minnal-film/recorder/record_kaaval.py` (headless Chromium, real clicks, 1×) drives this shot
+list against a running Kaaval with the demo zip. Only our own design is reviewed on camera, so no one else's results
+are shown.
 
 ## Checklist
 

@@ -42,6 +42,27 @@ def test_chip_without_vapwr_powers_every_block_at_1v8():
     assert runner.chip_supplies(tempfile.gettempdir() + "/nonexistent") == ""
 
 
+def test_foundry_standard_cells_are_never_powered_up():
+    """An LVS netlist expands sky130_fd_sc_hd__dfxtp_2 into transistors, with supply pins VPWR / VGND: still the
+    foundry's cell, not the design's, so the baseline plans nothing for it (it did, and reported 'unstable' VPB)."""
+    from app import planner
+    ff = "XM1 Q D VPWR VPB sky130_fd_pr__pfet_01v8_hvt L=0.15 W=0.42\nXM2 Q D VGND VNB sky130_fd_pr__nfet_01v8 L=0.15 W=0.42"
+    cells = [dict(cell="mag/x.lvs.spice#sky130_fd_sc_hd__dfxtp_2", ports=["CLK", "D", "VGND", "VNB", "VPB", "VPWR", "Q"],
+                  devices=24, netlist=ff),
+             dict(cell="xschem/amp.sch", ports=["vdd", "vss", "out"], devices=8,
+                  netlist="XM1 out in vss vss sky130_fd_pr__nfet_01v8 L=1 W=2")]
+    planned, logs = [], []
+    real = planner.engine.cells, planner.engine.plan
+    planner.engine.cells = lambda ws: cells
+    planner.engine.plan = lambda ws, ep: planned.append(ep["cell"]) or dict(ok=True, findings=[])
+    try:
+        planner._rules("ws", lambda *a, **k: logs.append(a[1]))
+    finally:
+        planner.engine.cells, planner.engine.plan = real
+    assert planned and all(c == "xschem/amp.sch" for c in planned), planned
+    assert any("foundry standard cell" in l for l in logs), logs
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

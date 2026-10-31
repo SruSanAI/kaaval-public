@@ -9,7 +9,7 @@ that reports every transistor's operating point (BSIM4 `show`), so the same deck
     tb = sim.Testbench.from_sch("xschem/tb_x.sch")
     ops = sim.op_points(tb, corner="ss", temp=-40, vscale=0.9)
 """
-import os, re, shutil, subprocess, tempfile, time
+import os, re, shutil, subprocess, tempfile, threading, time
 from dataclasses import dataclass, field
 
 from kaaval_engine import netlist as N
@@ -26,6 +26,34 @@ SAFE_OPT = {"wnflag", "gmin", "reltol", "abstol", "vntol", "chgtol", "method", "
             "temp", "tnom", "savecurrents"}
 
 
+RANDOM = re.compile(r"\b(agauss|gauss|aunif|unif|limit)\s*\(", re.I)
+
+
+def nominal_param(line):
+    """A designer's .param with every random draw replaced by its nominal value (the first argument): ngspice draws
+    agauss / gauss / aunif / unif / limit afresh on every run, so a bench that sets its supply that way would get a
+    different supply at each corner. Kaaval's corners are deterministic; mismatch is its own check (liberty.offset_check,
+    the PDK's _mm corners)."""
+    out, i = [], 0
+    while True:
+        m = RANDOM.search(line, i)
+        if not m:
+            return "".join(out) + line[i:]
+        j, depth, k = m.end(), 1, m.end()
+        first = None
+        while k < len(line) and depth:
+            c = line[k]
+            depth += c == "("
+            depth -= c == ")"
+            if c == "," and depth == 1 and first is None:
+                first = line[j:k]
+            k += 1
+        if depth:                                   # unbalanced: leave the rest as written
+            return "".join(out) + line[i:]
+        out.append(line[i:m.start()] + "(" + (first if first is not None else line[j:k - 1]).strip() + ")")
+        i = k
+
+
 @dataclass
 class Testbench:
     sch: str
@@ -33,11 +61,12 @@ class Testbench:
     analyses: list = field(default_factory=list)   # designer's analysis statements, as dot-lines
     params: list = field(default_factory=list)     # designer's .param / .ic / .nodeset lines
     options: dict = field(default_factory=dict)    # designer's simulator options from SAFE_OPT
+    nominal: list = field(default_factory=list)    # designer's .params whose random value (agauss, ...) was fixed
 
     @classmethod
     def from_sch(cls, sch):
         text = open(sch, errors="replace").read()
-        analyses, params, options = [], [], {}
+        analyses, params, options, nominal = [], [], {}, []
         for kind, f, props in parse(text):
             if kind != "C" or not any(k in f[0] for k in ("code", "simulator_commands")):
                 continue
@@ -55,12 +84,17 @@ class Testbench:
                             options[k.lower()] = v
                     continue
                 if SAFE_DOT.match(s):
+                    if re.match(r"^\s*\.param", s, re.I):
+                        s2 = nominal_param(s)
+                        if s2 != s:
+                            nominal += re.findall(r"(\w+)\s*=", s2)[:1]
+                            s = s2
                     (params if re.match(r"^\s*\.(param|ic|nodeset)", s, re.I) else analyses).append(s)
                 else:
                     m = ANALYSIS.match(s)
                     if m and not s.startswith("."):
                         analyses.append("." + m.group(1).lower() + m.group(2))
-        return cls(sch=sch, circuit=N.netlist(sch), analyses=analyses, params=params, options=options)
+        return cls(sch=sch, circuit=N.netlist(sch), analyses=analyses, params=params, options=options, nominal=nominal)
 
     def supplies(self):
         """(name, +node, value) of independent DC voltage sources driving a supply-named net."""
@@ -499,8 +533,9 @@ SUSPECT_BUDGET = 900.0
 
 
 def budget(seconds=None):
-    """A fine-step time budget to share between the startup_checked calls of one plan."""
-    return {"left": float(FINE_BUDGET if seconds is None else seconds), "timed_out": None}
+    """A fine-step time budget to share between the startup_checked calls of one plan (they may run at once: each
+    subtracts its own simulator seconds, under the budget's lock)."""
+    return {"left": float(FINE_BUDGET if seconds is None else seconds), "timed_out": None, "lock": threading.Lock()}
 
 
 def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, timeout=600, schedule=None, fine=None,
@@ -530,9 +565,10 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
         else:
             res = startup_corner(tb, corner, todo, vscale, ramp, settle, lim, schedule, tmax=tmax)
         if level is not None:
-            fine["left"] -= time.time() - t0
-            if any(res.get(t, (None, ""))[1] == "timeout" for t in todo):
-                fine["left"], fine["timed_out"] = 0.0, fine["timed_out"] or f"{fmt_step(tmax)} at {corner}"
+            with fine.setdefault("lock", threading.Lock()):
+                fine["left"] -= time.time() - t0
+                if any(res.get(t, (None, ""))[1] == "timeout" for t in todo):
+                    fine["left"], fine["timed_out"] = 0.0, fine["timed_out"] or f"{fmt_step(tmax)} at {corner}"
         nxt = []
         for t in todo:
             r, e = res.get(t, (None, "did not complete"))

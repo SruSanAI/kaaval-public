@@ -1,7 +1,7 @@
 """The text-only netlister follows xschem's rules: bus pins and instance arrays expand bit by bit, a sub-circuit's
 header carries its symbol's extra= ports and the template defaults its format passes in, and a real schematic
 netlists without error."""
-import os, sys, tempfile
+import os, re, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kaaval_engine import netlist as N
 
@@ -39,6 +39,22 @@ def test_real_schematic_if_present():
         return
     net = N.netlist(p)
     assert sum(1 for l in net.splitlines() if l.startswith("XM")) > 40
+
+
+def test_repeated_property_keeps_its_first_value():
+    """An instance whose property block repeats name= (pin attributes pasted after name=X_CORE) is named by the first,
+    as xschem names it; the last one once turned a subcircuit X_CORE into a 'voltage source' V_TRIG with two nets."""
+    from kaaval_engine import sch as S, xsch as X
+    props = "name=X_CORE\n\nname=V_THRESH dir=in sim_pinnumber=0\nname=V_TRIG dir=inout sim_pinnumber=5\n"
+    assert X._props(props)["name"] == "X_CORE" and S.attrs(props)["name"] == "X_CORE"
+    import tempfile
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "r.sch"), "w").write(
+        "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {}\nV {}\nS {}\nE {}\n"
+        "C {devices/res.sym} 0 0 0 0 {name=R1\nname=V_JUNK value=1k}\n"
+        "C {devices/lab_pin.sym} 0 -30 0 0 {name=p1 lab=a}\nC {devices/lab_pin.sym} 0 30 0 0 {name=p2 lab=b}\n")
+    text = N.netlist(os.path.join(d, "r.sch"))
+    assert re.search(r"^R1 a b 1k", text, re.M) and "V_JUNK" not in text, text
 
 
 if __name__ == "__main__":

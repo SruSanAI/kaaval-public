@@ -23,7 +23,12 @@ def _block(text, i):
 
 
 def _props(s):
-    return {k: v.strip('"') for k, v in KV.findall(s)}
+    """Attributes of a property string; a key given twice keeps its FIRST value, as xschem's own lookup does
+    (a pasted block of pin attributes after name=X1 must not rename the instance)."""
+    out = {}
+    for k, v in KV.findall(s):
+        out.setdefault(k, v.strip('"'))
+    return out
 
 
 def parse(text):

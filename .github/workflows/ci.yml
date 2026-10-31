@@ -20,5 +20,9 @@ jobs:
           volare enable --pdk sky130 --pdk-root "$HOME/pdk" c6d73a35f524070e85faff4a6a9eef49553ebc2b
           echo "KAAVAL_PDK_ROOT=$HOME/pdk/sky130A" >> "$GITHUB_ENV"
           echo "PDK_ROOT=$HOME/pdk/sky130A" >> "$GITHUB_ENV"
+      - name: xschem's symbol library (as in the Dockerfile; read as text, xschem is not installed)
+        run: |
+          git clone --depth 1 --branch 3.4.7 https://github.com/StefanSchippers/xschem /tmp/xschem
+          echo "KAAVAL_XSCHEM_LIB=/tmp/xschem/xschem_library" >> "$GITHUB_ENV"
       - name: tests (they simulate)
         run: for t in tests/test_*.py; do echo "== $t"; python "$t"; done

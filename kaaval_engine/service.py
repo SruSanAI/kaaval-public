@@ -173,7 +173,8 @@ def _testbench(d, p):
     tb = sim.Testbench.from_sch(p)
     if d.get("fix_traps"):
         circ, changes = units.correct_circuit(tb.circuit)
-        tb = sim.Testbench(sch=tb.sch, circuit=circ, analyses=tb.analyses, params=tb.params, options=tb.options)
+        tb = sim.Testbench(sch=tb.sch, circuit=circ, analyses=tb.analyses, params=tb.params, options=tb.options,
+                           nominal=tb.nominal)
         return tb, changes
     return tb, []
 

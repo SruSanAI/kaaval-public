@@ -12,6 +12,7 @@ import itertools, os, re, shutil, subprocess, threading, time
 
 from app import engine, inputs, planner, store
 from guard import sch_svg
+from kaaval_engine import extract
 
 WORK = os.path.expanduser(os.environ.get("KAAVAL_WORK", "~/.kaaval/repos"))
 MAX_REPO_MB = 300
@@ -228,11 +229,18 @@ def review(rid, src, root=None):
         if not os.path.isdir(scope):
             raise RuntimeError(f"The folder '{src.path}' is not in the repository.")
         files = design_files(root)
+        layout_note = None
+        if extract.needed(files):               # layout only: a netlist from the layout, so there is something to simulate
+            text, layout_note = extract.from_layout(root)
+            if text:
+                files[f"{extract.OUT}/{extract.top_cell(root)[0]}.spice"] = text
         ws = engine.upload(files)
         lv.set(ws=ws)
         lv.stage("fetch", "done", sha[:7])
         store.event(rid, "fetch", f"Got {('commit ' + sha[:7]) if sha != 'upload' else 'the uploaded files'}; "
                                   f"{len(files)} design files handed to the review engine")
+        if layout_note:
+            store.event(rid, "fetch", layout_note, "info" if f"{extract.OUT}/" in "".join(files) else "warn")
 
         lv.stage("audit", "running")
         rel_scope = os.path.relpath(scope, root) if scope != root else ""

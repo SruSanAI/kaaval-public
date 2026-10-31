@@ -384,8 +384,10 @@ def _odd(r, ref=None, vtol=0.1):
 
 def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):
     """Power-ups of every group (key, corner, vscale, schedule), each confirmed by sim.startup_checked. All default-step
-    runs come first (sim.WORKERS at once); then the groups whose default result looks like a failure (suspect(key, coarse)) take their
-    fine-step checks first, on their own budget (sim.SUSPECT_BUDGET), and the rest share sim.FINE_BUDGET. Returns
+    runs come first (sim.WORKERS at once); then the groups whose default result looks like a failure (suspect(key, coarse))
+    take their fine-step checks, on their own budget (sim.SUSPECT_BUDGET), before any other group starts its own; the rest
+    share sim.FINE_BUDGET. The fine-step checks also run sim.WORKERS at once: a budget counts simulator seconds (each
+    run subtracts its own), so it buys the same simulation as one at a time, in less wall time. Returns
     {key: {temp: (result, err)}}."""
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=sim.WORKERS) as ex:     # each run is its own ngspice process
@@ -395,10 +397,13 @@ def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):
     sus, rest = sim.budget(sim.SUSPECT_BUDGET), sim.budget()
     flag = {key: suspect(key, coarse) for key, *_ in groups}
     out = {}
-    for key, c, v, sched in sorted(groups, key=lambda g: not flag[g[0]]):
-        out[key] = sim.startup_checked(tb, c, temps, v, ramp=ramp, settle=settle, timeout=timeout, schedule=sched,
-                                       fine=sus if flag[key] else rest, coarse=coarse[key])
-    return out
+    for phase, fine in ((True, sus), (False, rest)):            # every suspect is checked before any other group
+        with ThreadPoolExecutor(max_workers=sim.WORKERS) as ex:
+            futs = {key: ex.submit(sim.startup_checked, tb, c, temps, v, ramp=ramp, settle=settle, timeout=timeout,
+                                   schedule=sched, fine=fine, coarse=coarse[key])
+                    for key, c, v, sched in groups if flag[key] == phase}
+            out.update({key: f.result() for key, f in futs.items()})
+    return {key: out[key] for key, *_ in groups}
 
 
 def bench_deck(plan, root, corner, temp, vscale=1.0, case=None):

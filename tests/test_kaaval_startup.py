@@ -161,6 +161,49 @@ def test_default_step_runs_overlap():
     assert all(got[f"{c}{v}"][27][0]["nodes"]["x"] == (v, v) for c in ("tt", "ss", "ff") for v in (0.9, 1.0))
 
 
+def test_fine_step_checks_overlap_and_suspects_finish_first():
+    """The fine-step checks run sim.WORKERS at once too, and every suspect group is checked before any other group's
+    fine step starts; each budget still counts every run's own seconds."""
+    import threading, time as _t
+    from kaaval_engine import plan as P
+    ok = dict(i_op=1e-5, i_end=1e-5, i_prev=1e-5, nodes={"x": (0.5, 0.5)})
+    dead = dict(ok, i_end=1e-10, i_prev=1e-10)
+    live, peak, lock, events = [0], [0], threading.Lock(), []
+
+    def fake(tb, corner, temps, vscale, ramp, settle, timeout, schedule, tmax=None):
+        if tmax is not None:
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+                events.append(("start", corner))
+            _t.sleep(0.2)
+            with lock:
+                live[0] -= 1
+                events.append(("end", corner))
+        return {t: (dict(dead if corner.startswith("ss") else ok), None) for t in temps}
+
+    real, workers, budget = sim.startup_corner, sim.WORKERS, sim.budget
+    sim.startup_corner, sim.WORKERS = fake, 2
+    seen = []
+    sim.budget = lambda seconds=None: seen.append(budget(seconds)) or seen[-1]
+    try:
+        groups = [(c, c, 1.0, None) for c in ("tt", "ff", "ss1", "ss2")]
+        t0 = _t.time()
+        got = P._checked_sweep(None, groups, [27], 20e-6, 300e-6, 150,
+                               lambda key, coarse: any(P._odd(r) for r, e in coarse[key].values()))
+        wall = _t.time() - t0
+    finally:
+        sim.startup_corner, sim.WORKERS, sim.budget = real, workers, budget
+    assert peak[0] == 2, peak
+    assert wall < 4 * 0.2 * 0.75, wall                          # 4 groups x 1 fine step of 0.2 s, 2 at a time
+    last_ss = max(i for i, (k, c) in enumerate(events) if k == "end" and c.startswith("ss"))
+    first_pass = min(i for i, (k, c) in enumerate(events) if k == "start" and c in ("tt", "ff"))
+    assert last_ss < first_pass, events
+    assert list(got) == ["tt", "ff", "ss1", "ss2"] and all(got[c][27][1] is None for c in got)
+    sus, rest = seen
+    assert sim.SUSPECT_BUDGET - sus["left"] >= 2 * 0.2 * 0.9 and sim.FINE_BUDGET - rest["left"] >= 2 * 0.2 * 0.9   # (run seconds, not wall)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

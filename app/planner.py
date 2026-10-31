@@ -303,6 +303,11 @@ def rail_volts(port, netlist):
     return 1.8, f"no 3.3 V device on {port}"
 
 
+# the PDK's own standard-cell and I/O libraries (sky130_fd_sc_hd__dfxtp_1, sky130_fd_io__..., the efabless and OSU
+# cells): an LVS or extracted netlist expands them into transistors, but they are not the designer's circuit
+FOUNDRY_CELL = re.compile(r"(?i)^(sky130_(fd|ef|osu)_(sc|io)\w*|gf180mcu_fd_(sc|io)\w*)__")
+
+
 def _rules(ws, log, max_cells=20, docs=""):
     """The no-model baseline: every cell whose pins name a supply and a ground is powered up at all 45 conditions.
     3.3 V for pins named like the analog 3.3 V rail, 1.8 V otherwise. Cells with two supply voltages or pins named
@@ -322,6 +327,10 @@ def _rules(ws, log, max_cells=20, docs=""):
         sup = [p for p in c["ports"] if SUP.match(p)]
         gnd = [p for p in c["ports"] if GND.match(p)]
         if not sup or not gnd:
+            continue
+        if FOUNDRY_CELL.match(name(c)):
+            log("plan", f"rules: {c['cell']} not powered up: a foundry standard cell ({name(c)}), characterised by "
+                        f"the PDK, not the design's own circuit")
             continue
         if digital_only(c.get("netlist")):
             log("plan", f"rules: {c['cell']} not powered up: standard cells only, a digital block (its reset sets its "

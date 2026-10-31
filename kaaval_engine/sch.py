@@ -27,7 +27,10 @@ def _block(text, start):
 
 
 def attrs(s):
-    return {k.lower(): v.strip('"') for k, v in KV.findall(s)}
+    out = {}                                   # a repeated key keeps its first value, as in xschem (xsch._props)
+    for k, v in KV.findall(s):
+        out.setdefault(k.lower(), v.strip('"'))
+    return out
 
 
 @functools.lru_cache(maxsize=None)

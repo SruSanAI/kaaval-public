@@ -579,6 +579,13 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
         lim = timeout if level is None else min(timeout * 4, fine["left"])
         if level is not None and lim < 1:
             break
+        if level == STEPS[1] and coarse is not None:
+            todo = _windowed_check(tb, corner, todo, vscale, ramp, settle, lim, schedule, fine, coarse, final, seen)
+            if not todo:
+                break
+            lim = min(timeout * 4, fine["left"])
+            if lim < 1:
+                break
         t0 = time.time()
         if level is None and coarse is not None:
             res = coarse
@@ -621,7 +628,52 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
             why = (f"the {fine['timed_out']} run timed out" if fine["timed_out"] else
                    f"the {fmt_step(bad[-1][1])} run failed ({bad[-1][0]})" if bad else "the fine-step time budget was spent")
             final[t] = (None, f"unconfirmed: {why}, so the result was not checked against a finer step ({vals})")
+    for r, _ in final.values():                    # (the default run's waveform served the windowed check only)
+        if r:
+            r.pop("_wave", None)
     return final
+
+
+WINDOW_MIN = 20e-6                 # the shortest hold a windowed fine check simulates after the ramp
+
+
+def _windowed_check(tb, corner, todo, vscale, ramp, settle, lim, schedule, fine, coarse, final, seen):
+    """The first fine-step check, over a window instead of the whole hold, when the default-step run settled early:
+    the state a power-up lands in is decided during the ramp and the settling after it. The fine run covers the ramp
+    and twice the default run's settling time; a condition is confirmed when the fine run has itself settled by then
+    (nothing moving or swinging) and agrees with the default-step waveform over the same interval. Everything else
+    (not settled early, still moving, disagreeing) goes on to the full-length fine run, unchanged. Returns the
+    temperatures still to check."""
+    ramp_end = _sched_end(ramp, schedule)
+    ok = {t: coarse[t][0] for t in todo if coarse.get(t) and not coarse[t][1] and coarse[t][0]
+          and coarse[t][0].get("settled_at") is not None and coarse[t][0].get("_wave")}
+    if not ok:
+        return todo
+    w = max(WINDOW_MIN, 2 * max(r["settled_at"] - ramp_end for r in ok.values()))
+    if w >= 0.75 * settle:
+        return todo                               # no real saving: the full run as before
+    t0 = time.time()
+    res = startup_corner(tb, corner, list(ok), vscale, ramp, w, lim, schedule, tmax=STEPS[1])
+    with fine.setdefault("lock", threading.Lock()):
+        fine["left"] -= time.time() - t0
+    left = []
+    low = lambda d: {k.lower(): v for k, v in d.items()}
+    for t in todo:
+        r, e = res.get(t, (None, "not run")) if t in ok else (None, "not windowed")
+        c = ok.get(t)
+        if c and r and not e and not r.get("moving") and not r.get("swing"):
+            times, series = c["_wave"]
+            cur = [k for k in series if "#branch" in k]
+            cw = _window_avg(times, series, cur, [k for k in series if k not in cur],
+                             ramp_end + 0.8 * w, ramp_end + w)
+            if cw and _same(dict(cw, nodes=low(cw["nodes"])), dict(r, nodes=low(r["nodes"]))):
+                seen[t].append((r, None, STEPS[1]))
+                final[t] = (dict(c, tmax=STEPS[1], step_check=f"agrees at {fmt_step(c.get('tmax') or (ramp_end + settle) / 4000)} "
+                                 f"and {fmt_step(STEPS[1])} over the first {(ramp_end + w) * 1e6:.0f} µs (the default-"
+                                 f"step run settled after {c['settled_at'] * 1e6:.0f} µs and stays there)"), None)
+                continue
+        left.append(t)
+    return left
 
 
 def fmt_step(s):
@@ -735,9 +787,17 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
             if not m or abs(float(m.group(1)) - osc[k0]) > 0.3 * osc[k0]:
                 osc = {}
                 moving = moving or [k0]           # unresolved: neither a verified swing nor a settled state
+        settled_at, wave = None, None
+        if tmax is None and not osc and not moving:     # the default-step run's own waveform: when did it settle?
+            cur = [k.lower() for k in isup]
+            nn = [k[2:-1].lower() for k in keys[len(isup):] if k[2:-1].lower() not in fl]
+            wave = _waveform(os.path.join(tmp, f"end{i}.txt"), cur + nn)
+            if wave:
+                settled_at = settle_time(wave[0], wave[1], [c for c in cur if c in wave[1]], ramp)
         r = dict(i_op=isum(opv), i_end=isum(trv), i_prev=isum(prev),
                  nodes={k[2:-1]: (opv[k], trv[k]) for k in keys[len(isup):] if k[2:-1].lower() not in fl},
-                 moving=moving, swing=osc, floating_swing=fsw, ramp=ramp, settle=settle,
+                 moving=moving, swing=osc, floating_swing=fsw, ramp=ramp, settle=settle, settled_at=settled_at,
+                 _wave=wave,
                  op_clean=not re.search(r"(?i)stepping failed|singular matrix", op_txt), confirmed=False)
         # a settled power-up state that differs from the DC answer is checked as a DC solution in its own right: the
         # DC solver, seeded with every node's power-up value, must stay there. Capacitors are open in DC, so states
@@ -761,6 +821,68 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
         res[t] = (r, None)
     shutil.rmtree(tmp, ignore_errors=True)
     return res
+
+
+def _waveform(path, names):
+    """(times, {name: values}) of the vectors `names` (lowercase ngspice names) in a `wrdata ... all` file."""
+    try:
+        lines = open(path).read().splitlines()
+    except OSError:
+        return None
+    if len(lines) < 3:
+        return None
+    hdr = [h.lower() for h in lines[0].split()]
+    cols = {n: hdr.index(n) for n in names if n in hdr}
+    if "time" not in hdr or not cols:
+        return None
+    ti = hdr.index("time")
+    times, series = [], {n: [] for n in cols}
+    for line in lines[1:]:
+        v = line.split()
+        try:
+            times.append(float(v[ti]))
+            for n, c in cols.items():
+                series[n].append(float(v[c]))
+        except (ValueError, IndexError):
+            return None
+    return times, series
+
+
+def settle_time(times, series, currents, start, vtol=0.01, itol=0.02):
+    """The earliest time after `start` from which every series stays at its final value (the mean of the last 20 %)
+    to the end: within vtol volts for nodes, within itol of the total for the summed supply current (`currents`
+    names those series). None when something still moves in the last 20 % (not settled)."""
+    if not times:
+        return None
+    stop = times[-1]
+    tail = [i for i, t in enumerate(times) if t >= stop - 0.2 * (stop - start)]
+    if not tail:
+        return None
+    total = [sum(abs(series[c][i]) for c in currents) for i in range(len(times))] if currents else None
+    checks = [(v, vtol) for n, v in series.items() if n not in currents]
+    if total:
+        fin = sum(total[i] for i in tail) / len(tail)
+        checks.append((total, max(itol * abs(fin), 1e-8)))
+    last = start
+    for v, tol in checks:
+        fin = sum(v[i] for i in tail) / len(tail)
+        for i in range(len(times) - 1, -1, -1):
+            if abs(v[i] - fin) > tol:
+                if times[i] >= stop - 0.2 * (stop - start):
+                    return None
+                last = max(last, times[min(i + 1, len(times) - 1)])
+                break
+    return last
+
+
+def _window_avg(times, series, currents, nets, t_from, t_to):
+    """A startup result's i_end / nodes over [t_from, t_to] of a waveform (to compare a shorter fine run with)."""
+    idx = [i for i, t in enumerate(times) if t_from <= t <= t_to]
+    if not idx:
+        return None
+    avg = lambda v: sum(v[i] for i in idx) / len(idx)
+    return dict(i_end=sum(abs(avg(series[c])) for c in currents if c in series),
+                nodes={n: (None, avg(series[n])) for n in nets if n in series})
 
 
 def _last_row(path):

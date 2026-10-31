@@ -204,6 +204,25 @@ def test_fine_step_checks_overlap_and_suspects_finish_first():
     assert sim.SUSPECT_BUDGET - sus["left"] >= 2 * 0.2 * 0.9 and sim.FINE_BUDGET - rest["left"] >= 2 * 0.2 * 0.9   # (run seconds, not wall)
 
 
+def test_settle_time_from_a_waveform():
+    t = [i * 1e-6 for i in range(101)]                                    # 0 .. 100 us
+    v = {"out": [min(1.0, x / 30e-6) for x in t], "v1#branch": [1e-5] * 101}
+    assert abs(sim.settle_time(t, v, ["v1#branch"], 20e-6) - 30e-6) < 1.5e-6  # reaches 1 V at 30 us, stays there
+    v["out"][95] = 0.5                                                    # moves again late: not settled
+    assert sim.settle_time(t, v, ["v1#branch"], 20e-6) is None
+
+
+def test_windowed_fine_check_confirms_an_early_settling_power_up():
+    """Our reference with its start-up device settles soon after the ramp: the first fine check runs over a window,
+    not the whole hold, and the result is the same one the default step found."""
+    tb = sim.Testbench(sch="own.sch", circuit=BETA + STARTUP, analyses=[".op"])
+    coarse = sim.startup_corner(tb, "tt", [27], 1.0, 20e-6, 300e-6, 150)     # as _checked_sweep passes it
+    assert coarse[27][0]["settled_at"] is not None
+    r, e = sim.startup_checked(tb, "tt", [27], 1.0, ramp=20e-6, settle=300e-6, coarse=coarse)[27]
+    assert e is None and "over the first" in r["step_check"], (e, r and r.get("step_check"))
+    assert "_wave" not in r and r["i_end"] > 1e-6
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

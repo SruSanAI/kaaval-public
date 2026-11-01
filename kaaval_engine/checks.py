@@ -297,7 +297,9 @@ def stability(lsweep, pm_min=45.0, gm_min=6.0):
     bad, low = [], []
     for c, r in ok.items():
         pm, gm = r.get("pm"), r.get("gm_db")
-        if r.get("positive_dc") or (pm is not None and pm < 0) or (gm is not None and gm < 0):
+        # positive feedback at DC latches only with a loop gain above 1 there; far below it the loop is just weak
+        latch = r.get("positive_dc") and (r.get("dc_gain_db") is None or r["dc_gain_db"] > 0)
+        if latch or (pm is not None and pm < 0) or (gm is not None and gm < 0):
             bad.append((c, r))
         elif (pm is not None and pm < pm_min) or (gm is not None and gm < gm_min):
             low.append((c, r))
@@ -312,7 +314,8 @@ def stability(lsweep, pm_min=45.0, gm_min=6.0):
         out.append(dict(rule="analog/unstable", severity="warn", device="loop", worst=c, n_bad=len(bad), n=n,
                         conds=[list(x[0]) for x in bad], margins=r,
                         message=f"The loop is unstable at {len(bad)}/{n} conditions: worst {c[0]}, {c[1]} °C, supply "
-                                f"×{c[2]}: " + ("positive feedback at DC" if r.get("positive_dc") else fmt(r)) +
+                                f"×{c[2]}: " + ("positive feedback at DC" if r.get("positive_dc") and
+                                                 (r.get("dc_gain_db") is None or r["dc_gain_db"] > 0) else fmt(r)) +
                                 ". It will oscillate or latch there." + span))
     if low:
         c, r = min(low, key=lambda x: x[1].get("pm") if x[1].get("pm") is not None else 999)
@@ -336,20 +339,21 @@ def state(r):
     return "unresolved" if r.get("moving") else "settled"
 
 
-def sequence(per, meta=None, vtol=0.1):
+def sequence(per, meta=None, vtol=0.1, floating=()):
     """Findings from a sequence test {case: {(corner, temp, vscale): (result, err)}}; the first case is the reference
     (every rail together, fast). A block on a chip must come up the same way however its rails, enables and resets
     arrive, so every case is compared with the reference at the same condition:
       sequence_dependent   at some condition a case ends dead, oscillating, or settled in a different state (a node
                            more than `vtol` away) while the reference came up working - the block depends on how the
                            chip powers up.
-    The reference's own power-up findings (checks.startup) are reported too, marked with the case. With `meta` (see
+    The reference's own power-up findings (checks.startup, with the `floating` pins) are reported too, marked with the
+    case. With `meta` (see
     plan.cases) the finding also states, for the failing rail order, the smallest gap between the rails that fails
     and the largest that passes, so it never rests on one chosen gap."""
     meta = meta or {}
     names = list(per)
     ref = per[names[0]]
-    out = [dict(f, case=names[0]) for f in startup(ref)]
+    out = [dict(f, case=names[0]) for f in startup(ref, floating=floating)]
     bad = []
     for name in names[1:]:
         for c, (r, e) in per[name].items():

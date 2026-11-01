@@ -18,6 +18,7 @@ engine when one is connected (app/engine.py: fix).
     POST /v1/kaaval/sanalyse     {ws, tb}                               -> does-not-start / two-states / oscillates
     POST /v1/kaaval/cells        {ws, scope?}                           -> every circuit cell: ports, size, netlist text
     POST /v1/kaaval/plan         {ws, plan}                             -> validate + run a reviewer's test plan
+    POST /v1/kaaval/loops        {ws, tb, budget?}                      -> loops the testbench closes, margins at PVT
     POST /v1/kaaval/wave         {ws, plan, corner, temp, vscale, case} -> one power-up waveform
     POST /v1/kaaval/health       {}                                     -> ngspice version, PDK installed
 
@@ -39,6 +40,7 @@ from flask import Blueprint, jsonify, request
 
 from kaaval_engine import checks, plan as kplan, sim, spice_cells, units  # noqa: E402
 from kaaval_engine import netlist as knet  # noqa: E402
+from kaaval_engine import loops as kloops  # noqa: E402
 from kaaval_engine.netlist import _find_sym, symbol  # noqa: E402
 from kaaval_engine.xsch import _props, parse  # noqa: E402
 
@@ -352,6 +354,33 @@ def deck():
         return _bad("unknown workspace, plan or corner", 404)
     text, e = kplan.bench_deck(pl, root, d["corner"], d.get("temp", 27), d.get("vscale", 1.0), d.get("case"))
     return jsonify({"ok": not e, "error": e, "deck": text})
+
+
+@bp.post("/loops")
+def loops():
+    """The feedback loops the designer's testbench closes around one instance (kaaval_engine.loops), each with its
+    loop gain at every corner, temperature and supply: {loops: [{inst, subckt, net, pin, via, findings, results}]}.
+    `budget`: seconds the simulations may take; loops not reached report errors, never findings."""
+    d = request.get_json(silent=True) or {}
+    root, p = _tb(d)
+    if not p:
+        return _bad("unknown workspace or testbench", 404)
+    tb, _ = _testbench(d, p)
+    found = kloops.find(tb.circuit, kloops.directions(p))[:6]
+    subs = {name.lower(): val for name, _, val in kloops._top(tb.circuit) if name[0].lower() == "x"}
+    secs = d.get("budget")
+    out = []
+    with _SEM, sim.until(float(secs) if isinstance(secs, (int, float)) and secs > 0 else None):
+        for lp in found:
+            sw = kloops.sweep(tb, lp)
+            rows = [dict(corner=c, temp=t, vscale=v, error=e,
+                         **({} if not r else {k: r.get(k) for k in ("dc_gain_db", "ugf", "pm", "gm_db")}))
+                    for (c, t, v), (r, e) in sw.items()]
+            judged = sum(1 for r, e in sw.values() if r and not e)
+            out.append(dict(lp, subckt=subs.get(lp["inst"].lower(), ""), results=rows, judged=judged,
+                            findings=checks.stability(sw) if judged else [],
+                            not_judged=next((e[13:] for r, e in sw.values() if e and e.startswith("not judged")), None)))
+    return jsonify({"loops": out})
 
 
 @bp.post("/plan")

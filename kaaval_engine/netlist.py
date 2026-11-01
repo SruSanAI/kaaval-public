@@ -117,12 +117,13 @@ def symbol(path):
         pat = r'(?<![\w])' + key + r'\s*=\s*'
         m = re.search(pat + r'"((?:[^"\\]|\\.)*)"', head, re.S) or re.search(pat + r"(\S+)", head)
         return m.group(1).replace('\\"', '"') if m else ""
-    pins = []
+    pins, dirs = [], {}
     for kind, f, props in parse(text):
         if kind == "B" and f and f[0] == "5":
             x1, y1, x2, y2 = map(float, f[1:5])
             p = _props(props)
             pins.append((p.get("name", ""), (x1 + x2) / 2, (y1 + y2) / 2, p.get("sim_pinnumber")))
+            dirs[p.get("name", "")] = str(p.get("dir", "")).lower()
     # xschem lists pins in file order; only sim_pinnumber (when every pin has one) reorders them. pinnumber does not.
     if pins and all(q[3] for q in pins):
         try:
@@ -131,7 +132,7 @@ def symbol(path):
             pass
     return dict(type=field("type"), format=field("format").replace("\\\n", " ").replace("\n+", " ").replace("\n", " "),
                 template=_props(field("template").replace("\n+", " ")), pins=[(n, x, y) for n, x, y, _ in pins],
-                extra=field("extra").split(), glob=field("global").lower() in ("true", "1", "ground"))
+                extra=field("extra").split(), glob=field("global").lower() in ("true", "1", "ground"), dirs=dirs)
 
 
 class _UF:

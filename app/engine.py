@@ -88,6 +88,11 @@ def testbench(ws, tb, fix_traps=False):
     return _post("testbench", {"ws": ws, "tb": tb, "fix_traps": fix_traps})
 
 
+def loops(ws, tb, budget=None, fix_traps=False):
+    """The feedback loops the testbench closes, each with its loop gain at 45 conditions (kaaval_engine.loops)."""
+    return _post("loops", dict({"ws": ws, "tb": tb, "fix_traps": fix_traps}, **({"budget": budget} if budget else {})))
+
+
 def corner(ws, tb, corner_name, conds, fix_traps=False):
     return _post("corner", {"ws": ws, "tb": tb, "corner": corner_name, "conds": conds, "fix_traps": fix_traps})["results"]
 

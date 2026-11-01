@@ -54,6 +54,68 @@ def test_marginal_startup_with_undriven_inputs_is_a_note():
     assert g["severity"] == "warn" and "undriven" not in g["message"]
 
 
+def _held(swings):
+    """held_inputs on a stub simulator: `swings` {held volts: swing dict or None}. Returns (findings, benches seen)."""
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "c.spice"), "w").write(".subckt amp vdd vss inp out\nR1 vdd out 1k\n.ends\n")
+    plan = dict(cell="c.spice#amp", kind="powerup", supplies={"vdd": 1.8}, grounds=["vss"], loads=[])
+    f = checks.startup(sweep({"out": 0.3}), floating=["inp"])
+    seen, old = [], P.sim.startup_checked
+
+    def fake(tb, c, temps, v, **kw):
+        line = next(l for l in tb.circuit.splitlines() if l.startswith("Vbias"))
+        volts = float(line.split()[-1])
+        seen.append((c, temps, v, line))
+        sw = swings.get(volts)
+        return {temps[0]: (dict(BASE, swing=sw) if sw else dict(BASE), None) if sw != "error" else (None, "timeout")}
+    P.sim.startup_checked = fake
+    try:
+        return P.held_inputs(plan, d, f, ["inp"], 20e-6, 300e-6, 150), seen
+    finally:
+        P.sim.startup_checked = old
+
+
+def test_oscillation_gone_with_the_input_held_is_a_note():
+    (f,), seen = _held({})
+    assert [s[3] for s in seen] == ["Vbias0 inp 0 0", "Vbias0 inp 0 0.9", "Vbias0 inp 0 1.8"], seen
+    assert all(s[0] == "tt" and s[1] == [27] for s in seen)           # the oscillation's own worst condition
+    assert f["rule"] == "analog/oscillates" and f["severity"] == "info", f
+    assert "held at 0 / 0.9 / 1.8 V the circuit settles every time" in f["message"], f["message"]
+    assert "a loop is unstable" not in f["message"] and [x["state"] for x in f["held"]] == ["settled"] * 3
+
+
+def test_oscillation_that_survives_a_held_input_stays_a_warning():
+    (f,), _ = _held({0.9: {"out": 0.25}})
+    assert f["severity"] == "warn" and "held at 0.9 V it still leaves out swinging 250 mV" in f["message"], f["message"]
+    (g,), _ = _held({1.8: "error"})                                   # one level did not finish: nothing concluded
+    assert g["severity"] == "warn" and "at 0 V it settles; at 0.9 V it settles; at 1.8 V it did not finish (timeout)" \
+        in g["message"] and "Nothing is concluded" in g["message"], g["message"]
+
+
+def test_held_reruns_have_their_own_time():
+    """Inside a review whose budget is spent, the held re-runs still get HELD_BUDGET seconds."""
+    left = []
+    old = P.sim.startup_checked
+    P.sim.startup_checked = lambda tb, c, temps, v, **kw: (left.append(P.sim.time_left()), {temps[0]: (dict(BASE), None)})[1]
+    try:
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "c.spice"), "w").write(".subckt amp vdd vss inp out\nR1 vdd out 1k\n.ends\n")
+        plan = dict(cell="c.spice#amp", kind="powerup", supplies={"vdd": 1.8}, grounds=["vss"], loads=[])
+        with P.sim.until(0.01):
+            P.held_inputs(plan, d, checks.startup(sweep({"out": 0.3}), floating=["inp"]), ["inp"], 20e-6, 300e-6, 150)
+        assert len(left) == 3 and all(x > P.HELD_BUDGET - 5 for x in left), left
+        left.clear()
+        P.held_inputs(plan, d, checks.startup(sweep({"out": 0.3}), floating=["inp"]), ["inp"], 20e-6, 300e-6, 150)
+        assert left == [None] * 3                       # no review budget: none imposed here
+    finally:
+        P.sim.startup_checked = old
+
+
+def test_no_held_rerun_without_undriven_inputs():
+    f = checks.startup(sweep({"out": 0.3}))
+    assert P.held_inputs(dict(supplies={"vdd": 1.8}), "/nonexistent", f, [], 20e-6, 300e-6, 150) == f
+
+
 def test_a_real_power_up_keeps_an_undriven_pin_out_of_the_state(tmp_path=None):
     """ngspice + sky130 on our own subcircuit: pin inp drives only a gate, nothing drives it. Its node is not part of
     the measured state, so it can neither make a finding nor a step-check disagreement."""

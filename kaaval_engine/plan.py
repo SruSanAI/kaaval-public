@@ -52,6 +52,9 @@ FAST, SLOW = 2e-6, 1e-3          # rail ramp times
 # regulators), so the gap is swept and a finding reports the smallest gap that fails and the largest that passes
 GAPS = [10e-6, 100e-6, 1e-3]
 LATE = 20e-6                      # enables / resets released LATE after the rails
+HELD = (0.0, 0.5, 1.0)            # an oscillation found with inputs undriven is re-run with them held at these
+                                  # fractions of the highest supply
+HELD_BUDGET = 120.0               # seconds for those re-runs, on top of the test's own share of the review's budget
 WAVE_MAX_T = 5e-3                 # a control's logic wave covers at most the first 5 ms after the rails
 SEQ_CORNERS, SEQ_TEMPS, SEQ_VSCALES = ["tt", "ss", "ff"], [-40, 27, 125], [1.0]
 
@@ -349,7 +352,9 @@ def _run(plan, root, on_result=None):
         rows = [dict(case=name, corner=c, temp=t, vscale=v, error=e,
                      **({} if not r else dict(i_op=r["i_op"], i_end=r["i_end"], nodes=r["nodes"], state=checks.state(r))))
                 for name, sw in per.items() for (c, t, v), (r, e) in sw.items()]
-        return dict(ok=True, findings=checks.sequence(per, meta), results=rows, bench=bench, cases=list(per))
+        fl = undriven(plan, root)
+        found = held_inputs(plan, root, checks.sequence(per, meta, floating=fl), fl, FAST, 300e-6, 300, scheds[ref])
+        return dict(ok=True, findings=found, results=rows, bench=bench, cases=list(per))
     got = _checked_sweep(tb, [((c, v), c, v, None) for c, v in worst_first(corners, vscales)], temps, 20e-6, 300e-6, 150,
                          lambda key, coarse: any(_odd(r) for r, e in coarse[key].values()))
     sw = {}
@@ -363,7 +368,68 @@ def _run(plan, root, on_result=None):
                  **({} if not r else dict(i_op=r["i_op"], i_end=r["i_end"], nodes=r["nodes"],
                                           confirmed=r.get("confirmed"), swing=r.get("swing"))))
             for (c, t, v), (r, e) in sw.items()]
-    return dict(ok=True, findings=checks.startup(sw, floating=undriven(plan, root)), results=rows, bench=bench)
+    fl = undriven(plan, root)
+    return dict(ok=True, findings=held_inputs(plan, root, checks.startup(sw, floating=fl), fl, 20e-6, 300e-6, 150),
+                results=rows, bench=bench)
+
+
+def held_inputs(plan, root, findings, floating, ramp, settle, timeout, schedule=None):
+    """An oscillation found while the test left inputs undriven, re-run at its worst condition with those inputs held
+    by a source at each of HELD x the highest supply. A held input carries no signal back into the circuit, so a
+    swing that remains comes from a loop of the circuit's own: the finding stays a warning and says at which level.
+    When the circuit settles at every level, the swing needed a floating input (a gate left open couples the output
+    back into itself): the finding becomes a note. Backtest v3 (2 Nov): 11 of the 15 oscillations on reviewed chips
+    came from power-ups that named undriven inputs, most on logic gates and latches of chips that work. A level that
+    does not finish leaves the warning as it was, and says what each level did. The re-runs have HELD_BUDGET seconds
+    of their own when the review has a time budget: in backtest v3's 555 timer the first latch had spent its test's
+    share, and its re-runs never started."""
+    osc = [f for f in findings if f.get("rule") == "analog/oscillates" and f.get("severity") == "warn"]
+    if not osc or not floating:
+        return findings
+    f = max(osc, key=lambda f: f.get("n_bad", 0))
+    c, t, v = f["worst"]
+    top = max(float(x) for x in plan["supplies"].values())
+    levels = []
+    with sim.until(HELD_BUDGET if sim.time_left() is not None else None):
+        for frac in HELD:
+            levels.append(_held_level(plan, root, floating, frac * top * v, (c, t, v), ramp, settle, timeout,
+                                      schedule))
+    f["held"] = levels
+    names = ", ".join(sorted(floating))
+    base = f["message"].split(" This test left ")[0]
+    still = [x for x in levels if x["swing"]]
+    if still:
+        x = max(still, key=lambda x: x["swing"][1])
+        f["message"] = (base + f" The test left {names} undriven; held at {x['volts']:g} V "
+                        f"{'it still leaves' if len(floating) == 1 else 'they still leave'} {x['swing'][0]} swinging "
+                        f"{x['swing'][1] * 1e3:.0f} mV, so the loop is unstable by itself.")
+    elif all(x["state"] in ("settled", "dead") for x in levels):
+        f["severity"] = "info"
+        at = " / ".join(f"{x['volts']:g}" for x in levels)
+        f["message"] = (base.replace(": a loop is unstable.", ".") + f" This test left {names} undriven, and held at "
+                        f"{at} V the circuit settles every time: the swing needs a floating input (an open gate "
+                        f"coupled to the output), not a loop of the circuit's own. Bias {names} as the chip does to "
+                        f"be sure.")
+    else:
+        said = {"settled": "settles", "dead": "stays off", "unresolved": "is still moving at the end"}
+        f["message"] += (f" Re-run with {names} held: " + "; ".join(
+            f"at {x['volts']:g} V it {said.get(x['state'], 'did not finish (' + x['state'].split(':')[0] + ')')}"
+            for x in levels) + ". Nothing is concluded from it.")
+    return findings
+
+
+def _held_level(plan, root, floating, volts, cond, ramp, settle, timeout, schedule):
+    """One held-input re-run (see held_inputs): {volts, state, swing: (node, peak-to-peak) or None}."""
+    c, t, v = cond
+    volts = round(volts, 4)
+    p2 = dict(plan, biases=list(plan.get("biases") or []) + [dict(port=q, volts=volts) for q in floating])
+    tb = compile_bench(p2, root)
+    tb.supplies = lambda: [(f"Vplan{i}", p, float(x)) for i, (p, x) in enumerate(plan["supplies"].items())]
+    r, e = sim.startup_checked(tb, c, [t], v, ramp=ramp, settle=settle, timeout=timeout, schedule=schedule).get(
+        t, (None, "did not complete"))
+    st = None if e or not r else checks.state(r)
+    return dict(volts=volts, state=st or str(e)[:80],
+                swing=(max(r["swing"].items(), key=lambda x: x[1]) if st == "oscillates" else None))
 
 
 def undriven(plan, root):

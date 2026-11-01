@@ -240,6 +240,54 @@ def keep_plans(rid, lv, res, by):
     return nf
 
 
+LOOP_BUDGET = float(os.environ.get("KAAVAL_LOOP_BUDGET", "240"))   # seconds for the testbench loops of one review
+LOOP_TBS = 8
+
+
+def testbench_loops(rid, ws, tbs):
+    """Every feedback loop the designer's testbenches close around an instance (a follower, an inverting stage, a
+    regulator's divider), its loop gain measured at 45 conditions: the loop the chip will run, in the configuration
+    its designer chose. The same subcircuit in the same feedback in several testbenches is reported once."""
+    t0, said, n = time.time(), {}, 0
+    for rel in tbs[:LOOP_TBS]:
+        left = LOOP_BUDGET - (time.time() - t0)
+        if left < 5:
+            store.event(rid, "testbench", f"Testbench loops: time budget ({LOOP_BUDGET:.0f} s) spent; "
+                                          f"{len(tbs[:LOOP_TBS]) - tbs.index(rel)} testbench(es) not checked", "warn")
+            break
+        try:
+            res = engine.loops(ws, rel, budget=left)
+        except engine.EngineError as e:
+            store.event(rid, "testbench", f"{rel}: its feedback loops could not be checked ({e})", "warn")
+            continue
+        for lp in res.get("loops") or []:
+            pms = [r["pm"] for r in lp["results"] if r.get("pm") is not None]
+            ok = sum(1 for r in lp["results"] if not r.get("error"))
+            what = f"{lp['inst']} ({lp['subckt']}) in feedback, its output {lp['net']} {lp['via']}"
+            key = (lp["subckt"].lower(), tuple(sorted(f["rule"] for f in lp["findings"])),
+                   round(min(pms)) if pms else None)
+            if key in said:
+                said[key].append(rel)
+                continue
+            said[key] = [rel]
+            store.event(rid, "testbench", f"{rel}: {what}: " + (
+                f"an amplifier loop at {ok}/{len(lp['results'])} conditions" +
+                (f", phase margin {min(pms):.0f}–{max(pms):.0f}°" if pms else ", no unity-gain crossing")
+                if ok else f"not judged ({lp.get('not_judged') or 'no condition simulated'})"))
+            for f in lp["findings"]:
+                n += 1
+                store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"], kind="risk", device=lp["inst"],
+                                            title=f"In the designer's own testbench, {what}. " + f["message"],
+                                            location=f"{rel} · {lp['inst']} loop (cut at {lp['pin']})",
+                                            detail=dict(f, loop={k: lp[k] for k in ("inst", "subckt", "net", "pin",
+                                                                                     "via")}, testbench=rel)))
+    for key, rels in said.items():
+        if len(rels) > 1:
+            store.event(rid, "testbench", f"The {key[0]} loop above is the same in {len(rels)} testbenches "
+                                          f"({', '.join(rels[:4])}): reported once")
+    return n
+
+
 def unc_note(lv):
     """The coverage gap of the planned tests, for the stage line: conditions whose fine-step check could not run."""
     n, k = lv.d.get("unconfirmed") or 0, lv.d.get("not_run") or 0
@@ -562,6 +610,9 @@ def review(rid, src, root=None):
                 lv.stage("pvt", "done", f"{45 - n_fail} / 45 simulated · {len(an['findings'])} finding(s)")
                 store.event(rid, "pvt", f"Swept 45 conditions ({45 - n_fail} simulated): {len(an['findings'])} "
                                         f"device(s) lose saturation or bias somewhere")
+
+        if tbs:
+            testbench_loops(rid, ws, tbs)
 
         # ---- Muse Spark: the tests the designer did not write --------------------------------------------------
         lv.stage("muse", "running")

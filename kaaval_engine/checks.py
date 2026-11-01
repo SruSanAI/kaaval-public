@@ -165,8 +165,9 @@ SU_VSCALES = [0.9, 1.0]
 # A power-up that stays off, lands in an undetermined state, or an output that sags under a load, in a test that left
 # an input undriven: the floating input alone can explain each, so it is a note to re-test with the input biased, not
 # a warning. Backtest v2 (2 Nov), with the plans' inputs recomputed: these three rules with undriven inputs were 24
-# findings on chips that work on silicon and none of the in-scope failures' own rules. An oscillation keeps its warning
-# (row 8's real op-amp oscillation came from a test with undriven inputs).
+# findings on chips that work on silicon and none of the in-scope failures' own rules. An oscillation keeps its
+# warning: a swinging internal node is less easily explained by a floating input (v2 has no real hit either way: its
+# row 8 oscillations were standard flip-flops, before the foundry-cell skip).
 UNDRIVEN_SEVERITY = "info"
 
 

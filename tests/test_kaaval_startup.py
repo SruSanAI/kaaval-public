@@ -223,6 +223,35 @@ def test_windowed_fine_check_confirms_an_early_settling_power_up():
     assert "_wave" not in r and r["i_end"] > 1e-6
 
 
+def test_a_cut_session_keeps_the_conditions_that_finished():
+    """A power-up session cut by its time limit (or the review's budget) after some temperatures finished keeps
+    those: each wrote its own files. Here the cut is staged after the second of three: the real deck runs, then the
+    last temperature's file is removed and the run reports a timeout."""
+    import re
+    tb = sim.Testbench(sch="own.sch", circuit=BETA + STARTUP, analyses=[".op"])
+    full = sim.startup_corner(tb, "tt", [-40, 27, 125], 1.0, ramp=20e-6, settle=300e-6)
+    real = sim.run
+
+    def cut(deck, timeout=120):
+        out, err = real(deck, timeout)
+        m = re.search(r">> (\S+)/tr2\.txt", deck)
+        if not m:                                        # (the other runs: not the power-up session)
+            return out, err
+        os.remove(os.path.join(m.group(1), "tr2.txt"))
+        return "", "timeout"
+    sim.run = cut
+    try:
+        part = sim.startup_corner(tb, "tt", [-40, 27, 125], 1.0, ramp=20e-6, settle=300e-6)
+    finally:
+        sim.run = real
+    assert part[125] == (None, "timeout"), part[125]
+    for t in (-40, 27):
+        r, e = part[t]
+        assert e is None and abs(r["i_end"] - full[t][0]["i_end"]) < 1e-12, (t, part[t], full[t])
+        for n, (a, b) in full[t][0]["nodes"].items():     # (the file copy prints more digits than meas does)
+            assert abs(r["nodes"][n][0] - a) < 1e-5 and abs(r["nodes"][n][1] - b) < 1e-5, (n, r["nodes"][n], a, b)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

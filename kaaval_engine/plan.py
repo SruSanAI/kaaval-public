@@ -350,7 +350,7 @@ def _run(plan, root, on_result=None):
                      **({} if not r else dict(i_op=r["i_op"], i_end=r["i_end"], nodes=r["nodes"], state=checks.state(r))))
                 for name, sw in per.items() for (c, t, v), (r, e) in sw.items()]
         return dict(ok=True, findings=checks.sequence(per, meta), results=rows, bench=bench, cases=list(per))
-    got = _checked_sweep(tb, [((c, v), c, v, None) for c in corners for v in vscales], temps, 20e-6, 300e-6, 150,
+    got = _checked_sweep(tb, [((c, v), c, v, None) for c, v in worst_first(corners, vscales)], temps, 20e-6, 300e-6, 150,
                          lambda key, coarse: any(_odd(r) for r, e in coarse[key].values()))
     sw = {}
     for c in corners:
@@ -451,6 +451,20 @@ def _odd(r, ref=None, vtol=0.1):
         return any(n in ref["nodes"] and b is not None and ref["nodes"][n][1] is not None and
                    abs(b - ref["nodes"][n][1]) > vtol for n, (a, b) in r["nodes"].items())
     return False
+
+
+# the order power-up groups run in: the process corners where a start-up fails most often first (slow and fast, then the
+# skewed ones, typical last), the low supply before nominal. Results do not depend on it; when a review's time budget
+# runs out (sim.until), the conditions not reached are the least likely to fail rather than the last in a list.
+CORNER_RANK = {"ss": 0, "ff": 1, "sf": 2, "fs": 3, "tt": 4}
+
+
+def worst_first(corners, vscales):
+    """[(corner, vscale)] with the extremes first: corners by CORNER_RANK, each supply scale furthest from 1 first,
+    interleaved so the two worst corners both come before any second supply of either."""
+    vs = sorted(vscales, key=lambda v: -abs(v - 1.0))
+    cs = sorted(corners, key=lambda c: CORNER_RANK.get(c, 9))
+    return [(c, v) for v in vs for c in cs[:2]] + [(c, v) for c in cs[2:] for v in vs]
 
 
 def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):

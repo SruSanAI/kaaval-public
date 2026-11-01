@@ -51,7 +51,10 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   design for 20 h).
 - Findings from a test that left an input undriven (stays off, undetermined start-up, weak output) are notes, not
   warnings. Checked against silicon outcomes first: in backtest v2 that moves 24 warnings on chips that work and
-  none of the failures' own findings; oscillation stays a warning because one real op-amp oscillation came from such a test.
+  none of the failures' own findings. Oscillation stays a warning.
+- The no-model baseline chooses among the cells it can test before taking the largest: on the 28 backtest rows,
+  cells powered up go from 59 to 74; an op-amp chip whose layout netlist's standard cells had taken every slot goes
+  from 0 tested cells to 6.
 - **FILL** silicon backtest: counts only, as `tools/score_backtest.py` prints them (rows, findings, unconfirmed, rails).
 - **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
 

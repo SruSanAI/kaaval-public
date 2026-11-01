@@ -758,6 +758,7 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
         lines.append(f"echo KAAVAL_OP {i}")
         for v in isup + [f"v({n})" for n in nets]:
             lines.append(f"print {v}")
+            lines.append(f"print {v} >> {tmp}/op{i}.txt")      # (each condition's own copy: see `done` below)
         # no `uic`: the transient's own starting point is the operating point with every source at its t=0 value (0),
         # a consistent unpowered circuit; `uic` would start from an inconsistent state and can settle anywhere
         lines.append(f"tran {stop / 4000:.4g} {stop:.4g}" + (f" 0 {tmax:.4g}" if tmax else ""))
@@ -767,19 +768,34 @@ def startup_corner(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, time
             lines.append(f"meas tran kv{k} avg {v} from={tm:.4g} to={stop:.4g}")
             lines.append(f"meas tran kw{k} avg {v} from={t0:.4g} to={tm:.4g}")
             lines.append(f"meas tran kp{k} pp {v} from={tm:.4g} to={stop:.4g}")
+        for k in range(len(isup) + len(nets)):
+            lines += [f"print kv{k} >> {tmp}/tr{i}.txt", f"print kw{k} >> {tmp}/tr{i}.txt",
+                      f"print kp{k} >> {tmp}/tr{i}.txt"]
     out, err = run(deck(t2, corner, 27, 1.0, control="\n".join(lines)), timeout=timeout)
-    if err:
-        return {t: (None, err) for t in temps}
     keys = isup + [f"v({n})" for n in nets]
+    got = {}
+    if err == "timeout":
+        # the session was cut (its own limit or the review's budget) after some conditions finished: ngspice's output
+        # is buffered and lost, but each finished condition wrote its own files, read back here; the rest stay timeouts
+        for i in range(len(temps)):
+            op_f, tr_f = os.path.join(tmp, f"op{i}.txt"), os.path.join(tmp, f"tr{i}.txt")
+            tr = open(tr_f, errors="replace").read() if os.path.isfile(tr_f) else ""
+            if os.path.isfile(op_f) and re.search(rf"^kp{len(keys) - 1}\s*=", tr, re.M):
+                got[("OP", i)], got[("TR", i)] = open(op_f, errors="replace").read(), tr
+        if not got:
+            shutil.rmtree(tmp, ignore_errors=True)
+            return {t: (None, err) for t in temps}
+    elif err:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return {t: (None, err) for t in temps}
     res = {}
     blocks = re.split(r"^KAAVAL_(OP|TR) (\d+)\s*$", out, flags=re.M)
-    got = {}
     for j in range(1, len(blocks) - 2, 3):
         got[(blocks[j], int(blocks[j + 1]))] = blocks[j + 2]
     for i, t in enumerate(temps):
         op_txt, tr_txt = got.get(("OP", i)), got.get(("TR", i))
         if op_txt is None or tr_txt is None:
-            res[t] = (None, "did not complete")
+            res[t] = (None, err or "did not complete")
             continue
         if re.search(r"(?i)timestep too small|simulation\(s\) aborted", tr_txt):
             res[t] = (None, "the power-up transient did not converge")

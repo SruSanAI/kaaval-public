@@ -369,24 +369,34 @@ def _rules(ws, log, max_cells=20, docs=""):
         # _extracted 9, _ext 4, _flat 3)
         return re.sub(r"(?i)_(parax|pex|extracted|ext|flat)$|\.mag$", "", n).lower()
     rank = lambda c: (0 if "#" not in c["cell"] else 2 if re.search(r"(?i)\.(sim|lvs|pex|rc)\.|parax|_rc\b|pex", c["cell"]) else 1)
-    best = {}
+    best, size = {}, {}
     cells = engine.cells(ws)
     for c in sorted(cells, key=lambda c: (rank(c), -c.get("devices", 0))):
         best.setdefault(name(c), c)
+        # a schematic counts the devices on its own sheet; an extracted or flat copy of the same cell counts all of
+        # them: the circuit's size is the largest count of any copy
+        size[name(c)] = max(size.get(name(c), 0), c.get("devices", 0))
     inner = used_inside(cells, name)
-    for c in sorted(best.values(), key=lambda c: -c.get("devices", 0))[:max_cells]:
+    # the cells that can be powered up are chosen first, then the largest of them: foundry standard cells from an LVS
+    # netlist once took every slot and left the design's op-amps untested (backtest row 8, 2 Nov)
+    chosen, foundry = [], []
+    for c in sorted(best.values(), key=lambda c: -size[name(c)]):
         sup = [p for p in c["ports"] if SUP.match(p)]
         gnd = [p for p in c["ports"] if GND.match(p)]
         if not sup or not gnd:
             continue
         if FOUNDRY_CELL.match(name(c)):
-            log("plan", f"rules: {c['cell']} not powered up: a foundry standard cell ({name(c)}), characterised by "
-                        f"the PDK, not the design's own circuit")
+            foundry.append(name(c))
             continue
         if digital_only(c.get("netlist")):
             log("plan", f"rules: {c['cell']} not powered up: standard cells only, a digital block (its reset sets its "
                         f"power-up state)")
             continue
+        chosen.append((c, sup, gnd))
+    if foundry:
+        log("plan", f"rules: {len(foundry)} foundry standard cell(s) not powered up ({', '.join(foundry[:3])}"
+                    f"{', ...' if len(foundry) > 3 else ''}): characterised by the PDK, not the design's own circuit")
+    for c, sup, gnd in chosen[:max_cells]:
         volts = {p: rail_volts(p, c.get("netlist")) for p in sup}
         if "the chip has no 3.3 V supply" in (docs or ""):        # runner.chip_supplies: the top level has no VAPWR
             volts = {p: (1.8, "the chip's top level has no VAPWR: only the 1.8 V supply") for p in sup}

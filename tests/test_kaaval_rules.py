@@ -102,6 +102,26 @@ def test_an_extracted_copy_is_the_same_circuit():
     assert {c for c, _ in planned} == {"x/comp_p.sch"}, planned
 
 
+def test_foundry_cells_do_not_take_the_slots_of_the_designs_own():
+    """The largest cells are chosen among those that can be powered up, and a schematic is as large as its largest
+    copy: an LVS netlist's standard cells (40 devices each) once took every slot from an op-amp schematic whose sheet
+    holds 9 instances (its flat copy: 551 devices), so nothing of the design was tested (backtest row 8)."""
+    from app import planner
+    std = [dict(cell=f"mag/top.lvs.spice#sky130_fd_sc_hd__dfxtp_{i}", ports=["VPWR", "VGND", "D", "Q"], devices=40,
+                netlist="X1 Q D VPWR VPWR sky130_fd_pr__pfet_01v8_hvt") for i in range(8)]
+    amp = [dict(cell="xschem/amp.sch", ports=["VDD", "VSS", "VOUT"], devices=9, netlist="x1 VDD VSS VOUT stage"),
+           dict(cell="mag/amp.sim.spice#amp_parax", ports=["VDD", "VSS", "VOUT"], devices=551, netlist="")]
+    planned = []
+    real = planner.engine.cells, planner.engine.plan
+    planner.engine.cells = lambda ws: std + amp
+    planner.engine.plan = lambda ws, ep, **kw: planned.append(ep["cell"]) or dict(ok=True, findings=[])
+    try:
+        planner._rules("ws", lambda *a, **k: None, max_cells=2)
+    finally:
+        planner.engine.cells, planner.engine.plan = real
+    assert set(planned) == {"xschem/amp.sch"}, planned
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

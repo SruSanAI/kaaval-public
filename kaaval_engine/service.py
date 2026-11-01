@@ -128,9 +128,8 @@ def testbenches():
             if f.endswith(".sch"):
                 t = open(os.path.join(dd, f), errors="replace").read()
                 # a testbench drives the circuit with sources; it has no ports, or it carries simulator commands
-                if re.search(r"^C \{devices/(vsource|isource)\.sym\}", t, re.M) and (
-                        not re.search(r"^C \{devices/(ipin|opin|iopin)\.sym\}", t, re.M)
-                        or re.search(r"^C \{devices/(code|code_shown|simulator_commands[\w]*)\.sym\}", t, re.M)):
+                if knet.stock("vsource|isource").search(t) and (
+                        not knet.PORT_PIN.search(t) or knet.stock(r"code|code_shown|simulator_commands\w*").search(t)):
                     out.append(os.path.relpath(os.path.join(dd, f), root))
     focus = d.get("focus") or ""
     kinds = {}
@@ -307,7 +306,7 @@ def cells():
                 continue
             p = os.path.join(dd, f)
             t = open(p, errors="replace").read()
-            ports = re.findall(r"^C \{devices/(?:ipin|opin|iopin)\.sym\}[^{]*\{[^}]*?lab=([^\s}]+)", t, re.M)
+            ports = [m[1] for m in knet.PORT_LABELS.findall(t)]
             if not ports:
                 continue
             try:

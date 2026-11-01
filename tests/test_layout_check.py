@@ -132,6 +132,15 @@ def test_tie_bodies_leaves_a_net_with_other_terminals():
     assert how == [dict(net="w1", devices=1, kind="pfet", tied_to="vdd")] and ".subckt c vdd vss a y\n" in t, (t, how)
 
 
+def test_split_pin_pieces_joined():
+    lay = ".subckt buf A Y VDD VSS VDD_uq1\nX0 Y A VDD VDD sky130_fd_pr__pfet_01v8 w=1 l=0.15\nX1 Y A VDD_uq1 VDD_uq1 sky130_fd_pr__pfet_01v8 w=1 l=0.15\n.ends\n"
+    t = L.join_split(lay, L.split_nets(lay))
+    assert t.splitlines()[0] == ".subckt buf A Y VDD VSS" and "VDD_uq1" not in t, t
+    r = dict(cell="buf", mag="buf.mag", sch="buf.sch", split={"VDD": 2}, verdict="split pins only")
+    f = L.split_finding(r)
+    assert f["severity"] == "info" and "Netgen matches the schematic: nothing else differs" in f["title"], f
+    assert "nothing else differs" not in L.split_finding(dict(r, verdict="pins or nets only"))["title"]
+
 def test_small_size_differences_are_noted_not_warned():
     r = dict(verdict="sizes differ", cell="c", mag="c.mag", sch="c.sch",
              sizes=["R1: l 25 in the layout, 24.36 in the schematic"])

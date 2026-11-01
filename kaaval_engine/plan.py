@@ -373,8 +373,7 @@ def undriven(plan, root):
         ports = spice_cells.load(root, rel)[1] or []
     else:
         p = _cell(plan, root)
-        ports = re.findall(r"^C \{devices/(?:ipin|opin|iopin)\.sym\}[^{]*\{[^}]*?lab=([^\s}]+)",
-                           open(p, errors="replace").read(), re.M) if p else []
+        ports = [m[1] for m in N.PORT_LABELS.findall(open(p, errors="replace").read())] if p else []
     used = set(plan.get("supplies") or {}) | set(plan.get("grounds") or [])
     used |= {t[k] for t in plan.get("ties") or [] for k in ("a", "b")}
     used |= {x.get("port") for k in ("biases", "controls", "loads", "pads") for x in plan.get(k) or []}
@@ -391,7 +390,7 @@ def dc_path(circuit, net):
     the design's own subcircuits: a pin with no DC path floats unless the test drives it. A device the netlist does not
     define (a standard cell, an unknown model) counts as a DC path, so a pin is called floating only when it surely is."""
     subs, top, cur = {}, [], None
-    for line in circuit.splitlines():
+    for line in re.sub(r"\n\s*\+", " ", circuit).splitlines():    # continuation lines joined (Magic's long pin lists)
         t = re.sub(r"'[^']*'|\{[^}]*\}", "", line).split()
         if not t or t[0].startswith("*"):
             continue

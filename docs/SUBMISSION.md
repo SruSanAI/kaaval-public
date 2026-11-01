@@ -36,14 +36,20 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   - a StrongARM latch decides wrong in 30 of 40 mismatch samples at ±1 mV, so its `.lib` is refused there.
 - Netlister: 95.3 % of 8,394 devices identical to xschem's own output, on 434 netlists.
 - Symbols named by a bare name or by another machine's PDK path now resolve as xschem finds them: unresolved
-  component references in the 98 cloned repositories fall from 4,603 to 98.
+  component references in the 98 cloned repositories fall from 4,603 to 98. The same holds for finding a
+  schematic's ports and its testbenches: 139 schematics in 21 repositories get their ports, 86 testbenches in 10
+  are found.
+- A SPICE subcircuit's ports continued on `+` lines (Magic writes ten pins to a line) are read: 757 of 4,118 SPICE
+  cells in 59 repositories had a truncated pin list, and 269 of them in 50 repositories now have their supply and
+  ground pins, so the baseline can power them up.
 - Layout against schematic (Magic + Netgen, transistor level, in every review): on 98 cloned Tiny Tapeout analog
   repositories, 451 cells drawn both ways, 274 match and 51 warnings fall in 26 repositories (different devices,
   or sizes more than 5 % off), median 0.18 s per cell. Counts only.
   7 cells in 7 repositories draw one of their pins in pieces that are not connected (Magic's `_uq` labels); 1 is a
   project's top cell, where nothing above joins them. 12 more are the same devices plus ideal schematic parts the
   layout cannot draw (ideal 10 fF ring loads, model-less R and C), now named instead of "not judged"; 6 match once
-  the transistor bodies the layout leaves on a net of their own are tied as the schematic ties them (all sub-cells).
+  the transistor bodies the layout leaves on a net of their own are tied as the schematic ties them (all sub-cells),
+  4 once a pin drawn in pieces is joined. Not judged: 50 -> 28.
 - As drawn, with its capacitance: a matched cell's own power-up / stability test re-runs on the layout extracted
   with its parasitic capacitance. Compared only when the test drives every input (in a pilot, all three
   differences of undriven tests were floating inputs): Muse Spark's biased plans are what it runs on.

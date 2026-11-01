@@ -141,6 +141,23 @@ def test_missing_symbols_are_listed():
     assert N.missing_symbols(d) == {"/home/someone/ip/vco.sym": ["top.sch"]}
 
 
+def test_stock_pins_by_bare_name_or_path_are_ports():
+    """A schematic whose pins are placed as iopin.sym or by another machine's path is a cell with ports, and one with
+    a bare vsource.sym and no ports is a testbench (2 Nov: 139 schematics in 21 clones had no ports found, 86
+    testbenches were missed in 10)."""
+    from kaaval_engine import netlist as N, plan as P
+    t = ("C {iopin.sym} 0 0 0 0 {name=p1 lab=VDD}\n"
+         "C {/foo/share/xschem/xschem_library/devices/ipin.sym} 0 0 0 0 {name=p2 lab=IN}\n"
+         "C {devices/opin.sym} 0 0 0 0 {name=p3 lab=OUT}\n"
+         "C {my_lib/ipin_custom.sym} 0 0 0 0 {name=x1 lab=NO}\n")
+    assert [m[1] for m in N.PORT_LABELS.findall(t)] == ["VDD", "IN", "OUT"]
+    assert N.stock("vsource|isource").search("C {vsource.sym} 0 0 0 0 {name=V1 value=1}")
+    assert not N.PORT_PIN.search("C {vsource.sym} 0 0 0 0 {name=V1 value=1}")
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "c.sch"), "w").write("v {xschem version=3.4.5 file_version=1.2}\n" + t)
+    assert P.undriven(dict(cell="c.sch", supplies={"VDD": 1.8}), d) == ["IN", "OUT"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

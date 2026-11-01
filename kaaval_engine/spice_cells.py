@@ -1,7 +1,8 @@
 """spice_cells.py — circuit cells from SPICE netlist files, for repositories that have no xschem schematics.
 
 Some open-silicon repositories carry their analog circuits only as SPICE text (.spice/.sp/.cir/.spi). Every
-`.subckt NAME ports...` block in such a file is a cell, named "<file>#<NAME>", with its ports from the .subckt line.
+`.subckt NAME ports...` block in such a file is a cell, named "<file>#<NAME>", with its ports from the .subckt line
+and its `+` continuations.
 Only the subcircuit definitions are kept: element lines, continuations and .param lines inside .subckt blocks.
 Everything else - .include, .lib, .option, .control blocks, analyses, shell commands - is dropped, so nothing written
 in the repository is ever executed; the engine adds its own PDK, sources and analyses around the cell.
@@ -14,8 +15,9 @@ KEEP_DOT = re.compile(r"^\s*\.(subckt|ends|param)\b", re.I)
 
 
 def _subckts(text):
-    """{name_lower: (name, ports, lines)} of every .subckt block, sanitised."""
-    out, cur, lines, in_ctl = {}, None, [], False
+    """{name_lower: (name, ports, lines)} of every .subckt block, sanitised. A .subckt line continued on `+` lines (Magic
+    writes ten pins to a line) has its ports on all of them."""
+    out, cur, lines, in_ctl, head = {}, None, [], False, False
     for raw in text.splitlines():
         s = raw.strip()
         low = s.lower()
@@ -29,10 +31,17 @@ def _subckts(text):
             continue
         if low.startswith(".subckt"):
             p = re.sub(r"\s+(params:|\w+=).*$", "", s, flags=re.I).split()
-            cur, lines = (p[1], [x for x in p[2:]]), [s]
+            cur, lines, head = (p[1], [x for x in p[2:]]), [s], not re.search(r"(?i)\s(params:|\w+=)", s)
             continue
         if cur is None:
             continue
+        if head and s.startswith("+"):
+            more = re.sub(r"\s+(params:|\w+=).*$", "", " " + s[1:], flags=re.I).split()
+            cur[1].extend(more)
+            head = not re.search(r"(?i)(^|\s)(params:|\w+=)", s[1:])
+            lines.append(s)
+            continue
+        head = False
         if low.startswith(".ends"):
             lines.append(s)
             out[cur[0].lower()] = (cur[0], cur[1], lines)

@@ -313,6 +313,25 @@ def _matched(res):
     return bool(re.fullmatch(r"(?i)circuits match (uniquely|with \d+ symmetr(y|ies))\.?", res))
 
 
+def join_split(lay, split):
+    """The layout with the pieces of each split pin (split_nets: Magic's <name>_uq<N>) joined into one net, as the cell
+    above joins them when it connects every piece."""
+    if not split:
+        return lay
+    base = {p.lower(): p for p in split}
+    ren = lambda x: base.get(re.sub(r"(?i)_uq\d+$", "", x).lower(), x) if re.search(r"(?i)_uq\d+$", x) else x
+    lines = []
+    for line in lay.splitlines():
+        t = line.split()
+        if t and t[0].lower() == ".subckt":
+            lines.append(" ".join(t[:2] + list(dict.fromkeys(ren(x) for x in t[2:]))))
+        elif t and not t[0].startswith("*"):
+            lines.append(" ".join(ren(x) for x in t))
+        else:
+            lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
 def _fets(text):
     """[(name, model, [d, g, s, b])] for the MOSFETs of a flat netlist (X or M lines on a *fet* model)."""
     out = []
@@ -429,11 +448,21 @@ def compare(root, pair, timeout=300):
         out["verdict"] = ("devices differ" if real else "ideal parts in schematic" if out["diffs"]
                           else "pins or nets only")
         if out["verdict"] == "pins or nets only":
+            # the smallest repair that makes Netgen match proves what alone differs: the split pins joined (the
+            # cell above must join them), the bodies tied as the schematic ties them, or both
+            joined = join_split(lay, out["split"])
             tied, how = tie_bodies(lay, sch)
-            if how:
-                t2, r2 = _netgen(tied, sch, pair["cell"], timeout)
+            both, how2 = tie_bodies(joined, sch)
+            for net, verdict, h in ((joined, "split pins only", None), (tied, "bodies untied", how),
+                                    (both, "split pins and bodies untied", how2)):
+                if net == lay or (verdict != "split pins only" and not h):
+                    continue
+                t2, r2 = _netgen(net, sch, pair["cell"], timeout)
                 if r2 is not None and _matched(r2) and not re.search(r"(?i)property errors", t2):
-                    out["verdict"], out["bodies"] = "bodies untied", how
+                    out["verdict"] = verdict
+                    if h:
+                        out["bodies"] = h
+                    break
     else:
         out["verdict"] = "match"
     return out
@@ -458,7 +487,9 @@ def split_finding(r):
                        f"extra pieces _uq). " + ("This is the project's top cell, so nothing above it joins them: only "
                                                  "the piece the chip's connection reaches is driven." if top else
                                                  "They are connected only if every cell that uses this one joins "
-                                                 "them."))[:600],
+                                                 "them.") +
+                       (" With the pieces joined, Netgen matches the schematic: nothing else differs." if
+                        r.get("verdict") in ("split pins only", "split pins and bodies untied") else ""))[:700],
                 location=f"{r['mag']}", detail=r)
 
 
@@ -488,7 +519,7 @@ def finding(r):
                            f"load, the extracted layout carries the real one; if not, the simulation has load or "
                            f"links the chip lacks.")[:600],
                     location=f"{r['mag']} vs {r['sch']}", detail=r)
-    if r.get("verdict") == "bodies untied":
+    if r.get("verdict") in ("bodies untied", "split pins and bodies untied"):
         top = bool(TOP.match(r["cell"]))
         what = "; ".join(f"{b['devices']} {b['kind']} bod{'y' if b['devices'] == 1 else 'ies'} on {b['net']}"
                          f" (the schematic ties them to {b['tied_to']})" for b in r.get("bodies", []))
@@ -551,7 +582,9 @@ def review(root, max_cells=12, budget=240.0):
             f"sizes, {v('match, ports differ')} the same circuit with ports named or wired otherwise, {v('schematic incomplete')} not "
             f"judged (cells we could not resolve), {v('layout has no devices')} with an empty layout view, "
             f"{v('ideal parts in schematic')} the same devices plus ideal schematic parts, "
-            f"{v('bodies untied')} the same circuit with transistor bodies left untied, "
+            f"{v('bodies untied') + v('split pins and bodies untied')} the same circuit with transistor bodies left "
+            f"untied, {v('split pins only') + v('split pins and bodies untied')} the same circuit once its split pins "
+            f"are joined, "
             f"{v('pins or nets only')} differ only in "
             f"pin or net names (not judged), {sum(1 for r in res if r['match'] is None)} could not be compared"
             + (f", {skipped} not compared (time)" if skipped else "") + ".")

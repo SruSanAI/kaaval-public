@@ -20,6 +20,17 @@ SKIP_TYPES = {"netlist_commands", "launcher", "probe", "logo", "spice_probe", "n
 LABEL_TYPES = {"label", "ipin", "opin", "iopin"}
 
 
+def stock(names):
+    """A regex for a schematic line placing one of xschem's stock symbols `names` (alternatives, regex), named as
+    devices/x.sym, by bare name (x.sym) or by a path (.../xschem_library/devices/x.sym): the three ways the clones
+    name them (#154). Group 1 is the symbol name."""
+    return re.compile(r"^C \{(?:[^{}\s]*/)?(" + names + r")\.sym\}", re.M)
+
+
+PORT_PIN = stock("ipin|opin|iopin")
+PORT_LABELS = re.compile(PORT_PIN.pattern + r"[^{]*\{[^}]*?lab=([^\s}]+)", re.M)   # group 2: the port's name
+
+
 @functools.lru_cache(maxsize=None)
 def _repo_index(root):
     """basename -> paths of every .sym/.sch under root (symbols are often referenced by an absolute path from the

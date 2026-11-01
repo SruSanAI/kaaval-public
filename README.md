@@ -75,7 +75,8 @@ sky130 setup (`kaaval_engine/layout_check.py`). A review reports:
   (`res_high_po_0p69`) is compared as the generic model at that width, as a schematic draws it;
 - **bodies untied**: the layout leaves transistor bodies (an n-well, the substrate) on a net that reaches nothing
   else, and with them tied as the schematic ties them Netgen matches: a note in a sub-cell (a tap above must tie
-  them), a warning in a project's top cell.
+  them), a warning in a project's top cell. A pin drawn in unconnected pieces is checked the same way: joined, does
+  the cell match?
 
 It judges only what it can see whole: a schematic that uses cells it cannot resolve (a library outside the
 repository), or a difference only in pin or net names, is reported as not judged. A mismatch shows that the committed
@@ -86,8 +87,8 @@ Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both way
 cells that are the same circuit with ports named or wired otherwise, 13 with small size differences and 5 with
 layout dummies; 12 that are the same devices plus ideal schematic parts (18 or 36 ideal 10 fF loads in ring
 oscillators, for instance); 6 in 4 repositories that are the same circuit with transistor bodies left untied (all
-sub-cells); 7 cells draw a pin in unconnected pieces (1 a project's top cell); not judged: 32 whose pins or wiring
-Netgen could not match, 8 empty layout views, 6 using cells we cannot resolve, 16 that could not be compared.
+sub-cells); 7 cells draw a pin in unconnected pieces (1 a project's top cell), 4 of them the same circuit once the
+pieces are joined; not judged: 28 whose pins or wiring Netgen could not match, 8 empty layout views, 6 using cells we cannot resolve, 16 that could not be compared.
 Counts only; results on other people's designs are not published. (An earlier count, 253 match and 60 warnings,
 included 12 cells whose resistors and sources our netlister had dropped: symbols named by bare name or by another
 machine's PDK path, fixed in #154.)

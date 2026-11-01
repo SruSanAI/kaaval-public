@@ -51,6 +51,7 @@ def flatten(text, top):
     hierarchy. Instance paths join with '/', internal nets are prefixed by their instance path."""
     subs, cur, body = {}, None, []
     lines = []
+    glob = {g.lower() for line in text.splitlines() if line.lower().startswith(".global") for g in line.split()[1:]}
     for raw in text.splitlines():                          # join '+' continuations
         if raw.startswith("+") and lines:
             lines[-1] += " " + raw[1:]
@@ -77,7 +78,7 @@ def flatten(text, top):
     def walk(name, nets, path, depth):
         ports, elems = subs[name]
         m = {p.lower(): n for p, n in zip(ports, nets)}
-        net = lambda x: m.get(x.lower(), f"{path}{x}" if path else x)
+        net = lambda x: m.get(x.lower(), x if x.lower() in glob or not path else f"{path}{x}")   # (.GLOBAL: one net)
         for t in elems:
             if t[0][:1].lower() == "x":
                 args = [x for x in t[1:] if "=" not in x]

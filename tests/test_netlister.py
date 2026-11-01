@@ -1,7 +1,7 @@
 """The text-only netlister follows xschem's rules: bus pins and instance arrays expand bit by bit, a sub-circuit's
 header carries its symbol's extra= ports and the template defaults its format passes in, and a real schematic
 netlists without error."""
-import os, re, sys, tempfile
+import os, re, shutil, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from kaaval_engine import netlist as N
 
@@ -60,6 +60,34 @@ def test_bus_ranges_with_two_dots():
     bus nets (a layout check then saw 50 devices against 8). Each copy takes its bits, in order."""
     assert N.expand("v[2..0],IN") == ["v[2]", "v[1]", "v[0]", "IN"] and N.expand("c[0..1]") == ["c[0]", "c[1]"]
     assert N.expand("v[2:0]") == N.expand("v[2..0]")
+
+
+def test_global_supply_label_reaches_sub_circuits():
+    """A sub-circuit powered by a vdd.sym label (global=true) shares the top's VDD, as xschem makes it with .GLOBAL;
+    without it the sub-circuit's VDD was a local, unconnected net and its divider sat at 0 V in simulation."""
+    import subprocess
+    from kaaval_engine import sim
+    d = tempfile.mkdtemp()
+    head = "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {}\nV {}\nS {}\nE {}\n"
+    open(os.path.join(d, "div.sym"), "w").write(
+        "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {type=subcircuit\nformat=\"@name @pinlist @symname\"\n"
+        "template=\"name=x1\"\n}\nV {}\nS {}\nE {}\nB 5 -2.5 -2.5 2.5 2.5 {name=mid dir=out}\n")
+    open(os.path.join(d, "div.sch"), "w").write(head +
+        "C {devices/res.sym} 0 0 0 0 {name=R1 value=1k}\nC {devices/vdd.sym} 0 -30 0 0 {name=l1 lab=VDD}\n"
+        "C {devices/lab_pin.sym} 0 30 0 0 {name=p1 lab=mid}\n"
+        "C {devices/res.sym} 0 90 0 0 {name=R2 value=1k}\nC {devices/lab_pin.sym} 0 60 0 0 {name=p2 lab=mid}\n"
+        "C {devices/gnd.sym} 0 120 0 0 {name=l2 lab=GND}\nC {devices/opin.sym} 100 0 0 0 {name=p3 lab=mid}\n")
+    open(os.path.join(d, "tb.sch"), "w").write(head +
+        "C {div.sym} 0 0 0 0 {name=x1}\nC {devices/lab_pin.sym} 0 0 0 0 {name=p1 lab=out}\n"
+        "C {devices/vsource.sym} 200 0 0 0 {name=V1 value=1.8}\nC {devices/vdd.sym} 200 -30 0 0 {name=l1 lab=VDD}\n"
+        "C {devices/gnd.sym} 200 30 0 0 {name=l2 lab=GND}\n")
+    text = N.netlist(os.path.join(d, "tb.sch"))
+    assert ".GLOBAL VDD" in text.splitlines(), text
+    if shutil.which("ngspice"):
+        deck = text + "\n.control\nop\nprint v(out)\n.endc\n.end\n"
+        open(os.path.join(d, "d.sp"), "w").write("* tb\n" + deck)
+        out = subprocess.run(["ngspice", "-b", os.path.join(d, "d.sp")], capture_output=True, text=True).stdout
+        assert re.search(r"v\(out\) = 9\.0+e-01", out), out[-400:]
 
 
 if __name__ == "__main__":

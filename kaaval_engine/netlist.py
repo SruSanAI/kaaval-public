@@ -82,7 +82,7 @@ def symbol(path):
             pass
     return dict(type=field("type"), format=field("format").replace("\\\n", " ").replace("\n+", " ").replace("\n", " "),
                 template=_props(field("template").replace("\n+", " ")), pins=[(n, x, y) for n, x, y, _ in pins],
-                extra=field("extra").split())
+                extra=field("extra").split(), glob=field("global").lower() in ("true", "1", "ground"))
 
 
 class _UF:
@@ -184,6 +184,8 @@ def build(sch_path, top=True, done=None):
             names[r] = a.get("lab", names.get(r, ""))
             if sd["type"] in ("ipin", "opin", "iopin"):
                 ports.append(a.get("lab"))
+            if sd.get("glob") and a.get("lab"):         # vdd.sym / gnd.sym: the net is global, in every sub-circuit too
+                done.setdefault("__globals__", {})[a["lab"].lower()] = a["lab"]
     auto = [0]
 
     taken = {n.lower() for n in names.values()}
@@ -238,7 +240,8 @@ def build(sch_path, top=True, done=None):
                 subckts += build(sub, top=False, done=done) if False else _subckt(sub, symname, sd, done)
         _emit(lines, sd, a, pinlist, symname, pin_nets[0])
     if top:
-        return subckts + lines
+        g = sorted((done.get("__globals__") or {}).values())
+        return subckts + lines + [f".GLOBAL {n}" for n in g]           # one line per net, as xschem writes it
     return subckts, lines, ports
 
 

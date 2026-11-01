@@ -23,7 +23,7 @@ B 5 97.5 37.5 102.5 42.5 {name=D dir=inout}
 """
 
 
-def sch(model="nfet_01v8", w=1, l=0.4):
+def sch(model="nfet_01v8", w=1, l=0.4, body="VSUBS"):
     return f"""v {{xschem version=3.4.5 file_version=1.2}}
 G {{}}
 K {{}}
@@ -41,7 +41,7 @@ spiceprefix=X
 C {{devices/lab_pin.sym}} 20 -30 0 1 {{name=p1 lab=D}}
 C {{devices/lab_pin.sym}} -20 0 0 0 {{name=p2 lab=G}}
 C {{devices/lab_pin.sym}} 20 30 0 1 {{name=p3 lab=S}}
-C {{devices/lab_pin.sym}} 20 0 0 1 {{name=p4 lab=VSUBS}}
+C {{devices/lab_pin.sym}} 20 0 0 1 {{name=p4 lab={body}}}
 C {{devices/ipin.sym}} -200 0 0 0 {{name=p5 lab=G}}
 C {{devices/iopin.sym}} -200 40 0 0 {{name=p6 lab=S}}
 C {{devices/iopin.sym}} -200 80 0 0 {{name=p7 lab=D}}
@@ -74,6 +74,62 @@ def test_report_counts_and_differences():
     assert dict(kind="flavour", layout="sky130_fd_pr__nfet_01v8", schematic="sky130_fd_pr__nfet_01v8_lvt",
                 n_layout=3, n_schematic=3) in d
     assert dict(kind="count", model="sky130_fd_pr__pfet_01v8", n_layout=15, n_schematic=13) in d and len(d) == 2
+
+
+IDEAL_REPORT = """Subcircuit summary:
+Circuit 1: ring                            |Circuit 2: ring
+-------------------------------------------|-------------------------------------------
+sky130_fd_pr__nfet_01v8 (20)               |sky130_fd_pr__nfet_01v8 (20)
+(no matching element)                      |10fF (18)
+Number of devices: 40 **Mismatch**         |Number of devices: 58 **Mismatch**
+"""
+
+
+def test_ideal_schematic_parts_are_named_not_hidden():
+    """A ring's schematic loads every stage with an ideal 10 fF capacitor (no PDK model, so nothing to draw): before,
+    Netgen's failure was read as 'pins or nets only' and not judged (8 cells in 98 repos)."""
+    d = L.differences(L.counts(IDEAL_REPORT))
+    assert d == [dict(kind="ideal", model="10fF", n_layout=0, n_schematic=18)], d
+    r = dict(verdict="ideal parts in schematic", cell="ring", mag="ring.mag", sch="ring.sch", diffs=d)
+    f = L.finding(r)
+    assert f["rule"] == "layout/ideal_parts" and f["severity"] == "info" and "18 x 10fF" in f["title"], f
+    r = dict(r, verdict="devices differ", diffs=d + [dict(kind="count", model="sky130_fd_pr__pfet_01v8", n_layout=2,
+                                                          n_schematic=1)])
+    f = L.finding(r)
+    assert f["rule"] == "layout/devices_differ" and "also simulates ideal parts (18 x 10fF)" in f["title"], f
+
+
+def test_fixed_width_resistor_is_the_generic_model_at_that_width():
+    t = L.generic_resistors("X0 a b vss sky130_fd_pr__res_high_po_0p69 l=20.35\n"
+                            "XR3 c d vss sky130_fd_pr__res_xhigh_po_5p73 W=5.73 L=3\n"
+                            "XR1 net1 in vss sky130_fd_pr__res_high_po W=0.690 L=20.35\n")
+    assert t.splitlines() == ["X0 a b vss sky130_fd_pr__res_high_po l=20.35 w=0.69",
+                              "XR3 c d vss sky130_fd_pr__res_xhigh_po W=5.73 L=3",
+                              "XR1 net1 in vss sky130_fd_pr__res_high_po W=0.690 L=20.35"], t
+    assert L.family("sky130_fd_pr__res_xhigh_po_1p41") == "sky130_fd_pr__res_xhigh_po"
+
+
+def test_a_body_left_untied_is_found_by_tying_it():
+    """The schematic ties the transistor's body to its source; the layout leaves it on the substrate net, which
+    reaches nothing else. Tied as the schematic ties it, Netgen matches: the verdict says so instead of 'not judged'.
+    Our fixture is a project's top cell, so it is a warning."""
+    if not L.available():
+        return
+    d = _repo(body="S")
+    r = L.compare(d, L.pairs(d)[0])
+    assert r["verdict"] == "bodies untied", r
+    assert r["bodies"] == [dict(net="VSUBS", devices=1, kind="nfet", tied_to="S")], r["bodies"]
+    f = L.finding(r)
+    assert f["rule"] == "layout/bodies_untied" and f["severity"] == "warn" and "1 nfet body on VSUBS" in f["title"], f
+
+
+def test_tie_bodies_leaves_a_net_with_other_terminals():
+    lay = (".subckt c vdd vss a y w1\nX0 y a vss vss sky130_fd_pr__nfet_01v8 w=1 l=0.15\n"
+           "X1 y a vdd w1 sky130_fd_pr__pfet_01v8 w=1 l=0.15\nR0 w1 vdd sky130_fd_pr__res_generic_nd l=1\n.ends\n")
+    sch = ".subckt c vdd vss a y\nXM0 y a vss vss sky130_fd_pr__nfet_01v8 W=1 L=0.15\nXM1 y a vdd vdd sky130_fd_pr__pfet_01v8 W=1 L=0.15\n.ends\n"
+    assert L.tie_bodies(lay, sch) == (lay, [])          # w1 also reaches a resistor: not a body-only net
+    t, how = L.tie_bodies(lay.replace("R0 w1 vdd sky130_fd_pr__res_generic_nd l=1\n", ""), sch)
+    assert how == [dict(net="w1", devices=1, kind="pfet", tied_to="vdd")] and ".subckt c vdd vss a y\n" in t, (t, how)
 
 
 def test_small_size_differences_are_noted_not_warned():

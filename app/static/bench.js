@@ -228,6 +228,8 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       'layout/sizes_differ': 'The layout draws its devices at other sizes than the schematic.',
       'layout/ports_differ': 'The same circuit as the schematic, but its ports are named or wired otherwise: check that every port is connected.',
       'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.',
+      'layout/ideal_parts': 'The schematic simulates ideal parts (a capacitor written as its value, an R with no model) that the layout cannot draw.',
+      'layout/bodies_untied': 'The layout leaves transistor bodies (an n-well, the substrate) on a net of their own; tied as the schematic ties them, the circuit matches.',
       'layout/split_pin': 'A pin is drawn in pieces that are not connected to each other: only what joins them above makes them one net.'};
     const plain = PLAIN[f.rule] ? `<div class="plain">${PLAIN[f.rule]}</div>` : '';
     const st = (f.detail && f.detail.states) || [];

@@ -169,9 +169,31 @@ VT = re.compile(r"(?i)_(lvt|hvt|mvt)\b")
 
 def family(model):
     """A device model with the PDK's fixed-size variant suffix removed (res_xhigh_po_0p35 is res_xhigh_po drawn at
-    0.35 um): the same device, so never a mismatch. A different threshold flavour (_lvt / _hvt) or resistor type
-    (high_po / xhigh_po) stays a different family."""
-    return re.sub(r"(?i)_0p\d+$", "", model.strip().lower())
+    0.35 um; the widths are 0p35, 0p69, 1p41, 2p85, 5p73): the same device, so never a mismatch. A different
+    threshold flavour (_lvt / _hvt) or resistor type (high_po / xhigh_po) stays a different family."""
+    return re.sub(r"(?i)_\dp\d+$", "", model.strip().lower())
+
+
+FIXED_W = re.compile(r"(?i)\b(sky130_fd_pr__res_x?high_po)_(\d)p(\d+)\b")
+
+
+def generic_resistors(text):
+    """A netlist with the PDK's fixed-width poly resistors (sky130_fd_pr__res_high_po_0p69, as Magic extracts them)
+    written as the generic model with that width (sky130_fd_pr__res_high_po w=0.69), the way a schematic draws the
+    same resistor. Netgen otherwise sees two device classes and fails the whole cell (tt09 PLL: one resistor of a
+    VCO, nothing else different)."""
+    def one(line):
+        m = FIXED_W.search(line)
+        if not m:
+            return line
+        line = FIXED_W.sub(r"\1", line)
+        return line if re.search(r"(?i)\sw\s*=", line) else line + f" w={m.group(2)}.{m.group(3)}"
+    return "\n".join(one(l) for l in text.splitlines()) + "\n"
+
+
+# a device class in a Netgen report that is no PDK device: an ideal element of the schematic (a capacitor written as
+# its value, "10fF", an R or C with no model, a 0-ohm link); Magic never extracts one, so it exists in one view only
+IDEAL = re.compile(r"(?i)^(?:[rcl]|\d[\w.]*)$")
 
 
 def counts(text):
@@ -188,9 +210,10 @@ def counts(text):
         got = False
         for side, cell in ((0, left), (1, right)):
             m = ROW.match(cell)
-            if m and "sky130_fd_pr__" in m.group(1):
+            if m and ("sky130_fd_pr__" in m.group(1) or IDEAL.match(m.group(1))):
                 cur = cur or {}
-                cur.setdefault(family(m.group(1)), [0, 0])[side] += int(m.group(3) or m.group(2))
+                key = family(m.group(1)) if "sky130_fd_pr__" in m.group(1) else "ideal " + m.group(1)
+                cur.setdefault(key, [0, 0])[side] += int(m.group(3) or m.group(2))
                 got = True
         if not got and cur and not re.match(r"(?i)\(no matching", left + right) and not left.startswith("Number"):
             pass
@@ -202,7 +225,9 @@ def counts(text):
 def differences(c):
     """Findings from {family: [layout, schematic]}: a family drawn in one view and absent from the other with the same
     device kind present instead is a flavour change (threshold voltage or resistor type); otherwise counts differ."""
-    out = []
+    out = [dict(kind="ideal", model=f[6:], n_layout=n[0], n_schematic=n[1]) for f, n in sorted(c.items())
+           if f.startswith("ideal ") and n[1] > n[0]]
+    c = {f: n for f, n in c.items() if not f.startswith("ideal ")}
     only_l = {f: n[0] for f, n in c.items() if n[0] and not n[1]}
     only_s = {f: n[1] for f, n in c.items() if n[1] and not n[0]}
     kind = lambda f: re.sub(r"(?i)_(lvt|hvt|mvt)$", "", re.sub(r"(?i)(x?high_po|low_po).*$", "po", f))
@@ -263,6 +288,87 @@ def split_nets(lay):
     return out
 
 
+def _netgen(lay, sch, cell, timeout):
+    """Netgen LVS of two netlist texts: (report text, final result line), or (why, None) when there is no result."""
+    with tempfile.TemporaryDirectory(prefix="kaaval_lvs_") as t:
+        open(os.path.join(t, "layout.spice"), "w").write(generic_resistors(lay))
+        open(os.path.join(t, "schematic.spice"), "w").write(generic_resistors(sch))
+        try:
+            p = subprocess.run(["netgen", "-batch", "lvs", f"layout.spice {cell}", f"schematic.spice {cell}", SETUP,
+                                "report.txt"], cwd=t, capture_output=True, text=True, timeout=timeout,
+                               stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            return f"Netgen took over {timeout} s", None
+        rep = os.path.join(t, "report.txt")
+        text = open(rep, errors="replace").read() if os.path.isfile(rep) else ""
+        log = p.stdout + p.stderr
+    final = re.search(r"Final result:\s*(.+)", text + "\n" + log)
+    if not final:
+        return "Netgen gave no result (" + " ".join(log.split()[-25:]) + ")", None
+    return text, final.group(1).strip()
+
+
+def _matched(res):
+    # "with N symmetries": the same circuit, some devices interchangeable (a ring of identical stages) - a match
+    return bool(re.fullmatch(r"(?i)circuits match (uniquely|with \d+ symmetr(y|ies))\.?", res))
+
+
+def _fets(text):
+    """[(name, model, [d, g, s, b])] for the MOSFETs of a flat netlist (X or M lines on a *fet* model)."""
+    out = []
+    for line in text.replace("\n+", " ").splitlines():
+        t = [x for x in line.split() if "=" not in x]
+        if len(t) >= 6 and t[0][:1].lower() in "xm" and re.search(r"(?i)fet", t[5]):
+            out.append((t[0], t[5].lower(), t[1:5]))
+    return out
+
+
+def tie_bodies(lay, sch):
+    """The layout with every body-only net (a net that reaches nothing but transistor bodies: an n-well or the
+    substrate the cell leaves untied, its tap in the cell above or nowhere) renamed to the net the schematic ties
+    that kind of transistor's body to. Returns (netlist, [{net, devices, kind, tied_to}]), or (lay, []) when there is
+    no such net or the schematic gives no single body net for its kind. A match after this proves the cell is the
+    schematic's circuit except for its body ties."""
+    kinds = lambda m: "pfet" if "pfet" in m else "nfet" if "nfet" in m else None
+    sb = {}
+    for _, m, (d, g, s, b) in _fets(sch):
+        sb.setdefault(kinds(m), set()).add(b.split("/")[-1])
+    seen = {}
+    for name, m, (d, g, s, b) in _fets(lay):
+        seen.setdefault(b, []).append((name, kinds(m)))
+    other = set()
+    for line in lay.replace("\n+", " ").splitlines():
+        t = [x for x in line.split() if "=" not in x]
+        if not t or t[0].startswith((".", "*")):
+            continue
+        for i, n in enumerate(t[1:-1]):
+            if not (t[0][:1].lower() in "xm" and len(t) >= 6 and re.search(r"(?i)fet", t[5]) and i == 3):
+                other.add(n)                                 # any terminal but a transistor's body
+    how, ren = [], {}
+    for net, devs in seen.items():
+        if net in other:
+            continue
+        ks = {k for _, k in devs}
+        if len(ks) != 1 or None in ks or len(sb.get(next(iter(ks))) or ()) != 1:
+            return lay, []
+        to = next(iter(sb[next(iter(ks))]))
+        if to == net:
+            continue
+        ren[net] = to
+        how.append(dict(net=net, devices=len(devs), kind=next(iter(ks)), tied_to=to))
+    if not ren:
+        return lay, []
+    lines = []
+    for line in lay.splitlines():
+        t = line.split()
+        if t and t[0].lower() == ".subckt":                # a renamed port joins the one it is tied to
+            ports = list(dict.fromkeys(ren.get(x, x) for x in t[2:] if "=" not in x))
+            lines.append(" ".join(t[:2] + ports))
+            continue
+        lines.append(" ".join(ren.get(x, x) for x in t) if t and not t[0].startswith("*") else line)
+    return "\n".join(lines) + "\n", how
+
+
 def compare(root, pair, timeout=300):
     """Netgen LVS of the cell's extracted layout against its schematic."""
     out = dict(cell=pair["cell"], sch=pair["sch"], mag=pair["mag"], match=None, summary=[], error=None)
@@ -290,27 +396,12 @@ def compare(root, pair, timeout=300):
         out["error"] = "the layout cell holds no devices (an abstract or placeholder view), so it is not compared"
         return out
     out["split"] = split_nets(lay)
-    with tempfile.TemporaryDirectory(prefix="kaaval_lvs_") as t:
-        open(os.path.join(t, "layout.spice"), "w").write(lay)
-        open(os.path.join(t, "schematic.spice"), "w").write(sch)
-        try:
-            p = subprocess.run(["netgen", "-batch", "lvs", f"layout.spice {pair['cell']}",
-                                f"schematic.spice {pair['cell']}", SETUP, "report.txt"], cwd=t, capture_output=True,
-                               text=True, timeout=timeout, stdin=subprocess.DEVNULL)
-        except subprocess.TimeoutExpired:
-            out["error"] = f"Netgen took over {timeout} s"
-            return out
-        rep = os.path.join(t, "report.txt")
-        text = open(rep, errors="replace").read() if os.path.isfile(rep) else ""
-        log = p.stdout + p.stderr
-    final = re.search(r"Final result:\s*(.+)", text + "\n" + log)
-    if not final:
-        out["error"] = "Netgen gave no result (" + " ".join(log.split()[-25:]) + ")"
+    text, res = _netgen(lay, sch, pair["cell"], timeout)
+    if res is None:
+        out["error"] = text
         return out
-    res = final.group(1).strip()
     out["result"] = res
-    # "with N symmetries": the same circuit, some devices interchangeable (a ring of identical stages) - a match
-    out["match"] = bool(re.fullmatch(r"(?i)circuits match (uniquely|with \d+ symmetr(y|ies))\.?", res))
+    out["match"] = _matched(res)
     if re.search(r"(?i)property errors were found|with property errors", text + res):
         out["verdict"] = "sizes differ"                  # the same circuit, with devices of other sizes (W, L, value)
         out["sizes"] = sizes(text)
@@ -334,7 +425,15 @@ def compare(root, pair, timeout=300):
                     d["dummies"] = True
         # devices differ: the chip is not the circuit simulated. Otherwise only pins or nets could not be matched
         # (a label, the substrate's implicit VSUBS): reported, never judged as a layout error
-        out["verdict"] = "devices differ" if out["diffs"] else "pins or nets only"
+        real = [d for d in out["diffs"] if d["kind"] != "ideal"]
+        out["verdict"] = ("devices differ" if real else "ideal parts in schematic" if out["diffs"]
+                          else "pins or nets only")
+        if out["verdict"] == "pins or nets only":
+            tied, how = tie_bodies(lay, sch)
+            if how:
+                t2, r2 = _netgen(tied, sch, pair["cell"], timeout)
+                if r2 is not None and _matched(r2) and not re.search(r"(?i)property errors", t2):
+                    out["verdict"], out["bodies"] = "bodies untied", how
     else:
         out["verdict"] = "match"
     return out
@@ -380,11 +479,34 @@ def finding(r):
                            f"wired otherwise (Netgen LVS: " + "; ".join(r.get("ports", [])[:3]) + "). A port the layout "
                            "leaves unconnected is floating on the chip.")[:700],
                     location=f"{r['mag']} vs {r['sch']}", detail=r)
+    ideal = [d for d in r.get("diffs") or [] if d["kind"] == "ideal"]
+    said = "; ".join(f"{d['n_schematic'] - d['n_layout']} x {d['model']}" for d in ideal)
+    if r.get("verdict") == "ideal parts in schematic":
+        return dict(rule="layout/ideal_parts", severity="info", device=r["cell"],
+                    title=(f"{r['cell']}: the schematic simulates ideal parts the layout does not draw ({said}: no PDK "
+                           f"model, so no layout shape). Otherwise the devices are the same. If they stand for wiring "
+                           f"load, the extracted layout carries the real one; if not, the simulation has load or "
+                           f"links the chip lacks.")[:600],
+                    location=f"{r['mag']} vs {r['sch']}", detail=r)
+    if r.get("verdict") == "bodies untied":
+        top = bool(TOP.match(r["cell"]))
+        what = "; ".join(f"{b['devices']} {b['kind']} bod{'y' if b['devices'] == 1 else 'ies'} on {b['net']}"
+                         f" (the schematic ties them to {b['tied_to']})" for b in r.get("bodies", []))
+        return dict(rule="layout/bodies_untied", severity="warn" if top else "info", device=r["cell"],
+                    title=(f"{r['cell']}: the layout leaves transistor bodies on a net of their own: {what}. With "
+                           f"them tied as the schematic does, Netgen matches the circuit, so nothing else differs. " +
+                           ("This is the project's top cell, so no tap above ties them: the well or substrate floats "
+                            "unless a tap in this cell reaches it." if top else
+                            "A well or substrate tap in every cell that uses this one must tie them; with none, the "
+                            "bodies float (threshold shift, latch-up risk)."))[:700],
+                    location=f"{r['mag']} vs {r['sch']}", detail=r)
     if r.get("verdict") != "devices differ":
         return None
-    only_dummies = all(d.get("dummies") for d in r["diffs"])
+    only_dummies = all(d.get("dummies") for d in r["diffs"] if d["kind"] != "ideal")
     parts = []
     for d in r["diffs"]:
+        if d["kind"] == "ideal":
+            continue
         if d["kind"] == "flavour":
             what = ("a different threshold voltage" if VT.search(d["layout"] + " " + d["schematic"])
                     else "a different resistor type, so a different resistance" if "_po" in d["layout"]
@@ -402,6 +524,7 @@ def finding(r):
                              "schematic too.")[:600], location=f"{r['mag']} vs {r['sch']}", detail=r)
     return dict(rule="layout/devices_differ", severity="warn", device=r["cell"],
                 title=(f"{r['cell']}: the committed layout and schematic hold different devices: " + "; ".join(parts) +
+                       (f"; the schematic also simulates ideal parts ({said})" if ideal else "") +
                        " (Netgen LVS, parallel devices merged). Either the chip is not the circuit that was simulated, "
                        "or the schematic is out of date.")[:700],
                 location=f"{r['mag']} vs {r['sch']}", detail=r)
@@ -427,6 +550,8 @@ def review(root, max_cells=12, budget=240.0):
             f"{v('match')} match, {v('devices differ')} with different devices, {v('sizes differ')} with different device "
             f"sizes, {v('match, ports differ')} the same circuit with ports named or wired otherwise, {v('schematic incomplete')} not "
             f"judged (cells we could not resolve), {v('layout has no devices')} with an empty layout view, "
+            f"{v('ideal parts in schematic')} the same devices plus ideal schematic parts, "
+            f"{v('bodies untied')} the same circuit with transistor bodies left untied, "
             f"{v('pins or nets only')} differ only in "
             f"pin or net names (not judged), {sum(1 for r in res if r['match'] is None)} could not be compared"
             + (f", {skipped} not compared (time)" if skipped else "") + ".")

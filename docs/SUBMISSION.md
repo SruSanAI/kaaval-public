@@ -41,7 +41,9 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   repositories, 451 cells drawn both ways, 274 match and 51 warnings fall in 26 repositories (different devices,
   or sizes more than 5 % off), median 0.18 s per cell. Counts only.
   7 cells in 7 repositories draw one of their pins in pieces that are not connected (Magic's `_uq` labels); 1 is a
-  project's top cell, where nothing above joins them.
+  project's top cell, where nothing above joins them. 12 more are the same devices plus ideal schematic parts the
+  layout cannot draw (ideal 10 fF ring loads, model-less R and C), now named instead of "not judged"; 6 match once
+  the transistor bodies the layout leaves on a net of their own are tied as the schematic ties them (all sub-cells).
 - As drawn, with its capacitance: a matched cell's own power-up / stability test re-runs on the layout extracted
   with its parasitic capacitance. Compared only when the test drives every input (in a pilot, all three
   differences of undriven tests were floating inputs): Muse Spark's biased plans are what it runs on.

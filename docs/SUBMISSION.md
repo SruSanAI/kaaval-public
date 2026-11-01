@@ -35,9 +35,11 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   - the LDO's load-step droop puts setup on `ss_n40C_1v35`, not `1v44`;
   - a StrongARM latch decides wrong in 30 of 40 mismatch samples at ±1 mV, so its `.lib` is refused there.
 - Netlister: 95.3 % of 8,394 devices identical to xschem's own output, on 434 netlists.
+- Symbols named by a bare name or by another machine's PDK path now resolve as xschem finds them: unresolved
+  component references in the 98 cloned repositories fall from 4,603 to 98.
 - Layout against schematic (Magic + Netgen, transistor level, in every review): on 98 cloned Tiny Tapeout analog
-  repositories, 451 cells drawn both ways, 253 match and 60 warnings fall in 25 repositories (different devices,
-  or sizes more than 5 % off), median 0.25 s per cell. Counts only.
+  repositories, 451 cells drawn both ways, 274 match and 51 warnings fall in 26 repositories (different devices,
+  or sizes more than 5 % off), median 0.18 s per cell. Counts only.
   7 cells in 7 repositories draw one of their pins in pieces that are not connected (Magic's `_uq` labels); 1 is a
   project's top cell, where nothing above joins them.
 - As drawn, with its capacitance: a matched cell's own power-up / stability test re-runs on the layout extracted

@@ -42,9 +42,19 @@ def _repo_root(local):
     return local
 
 
+# a symbol referenced by an absolute path from the designer's machine (/home/ttuser/pdk/sky130A/libs.tech/xschem/
+# sky130_fd_pr/nfet_01v8.sym): the part after the library root names the same symbol in ours
+LIB_ROOT = re.compile(r".*?/(?:libs\.tech/xschem|xschem_library)/")
+
+
 def _find_sym(sym, local):
     for d in [local] + SYMBOL_PATHS:
         p = os.path.normpath(os.path.join(d, sym))
+        if os.path.exists(p):
+            return p
+    rel = LIB_ROOT.sub("", sym.replace("\\", "/"), count=1) if LIB_ROOT.match(sym.replace("\\", "/")) else None
+    for d in SYMBOL_PATHS if rel else []:
+        p = os.path.normpath(os.path.join(d, rel))
         if os.path.exists(p):
             return p
     cands = _repo_index(_repo_root(local)).get(os.path.basename(sym), [])
@@ -52,7 +62,34 @@ def _find_sym(sym, local):
         # prefer the copy whose path ends like the reference (same parent folder name)
         tail = os.path.join(*sym.replace("\\", "/").split("/")[-2:]) if "/" in sym else sym
         return next((c for c in cands if c.endswith(tail)), cands[0])
+    # a bare name the repository does not hold (lab_pin.sym, gnd.sym, res.sym): xschem's library path holds
+    # xschem_library/devices itself
+    if "/" not in sym.replace("\\", "/"):
+        for d in SYMBOL_PATHS:
+            p = os.path.join(d, "devices", sym)
+            if os.path.exists(p):
+                return p
     return None
+
+
+def missing_symbols(root):
+    """{symbol reference: [schematics using it]} for components whose symbol neither the repository nor the libraries
+    hold (a symbol left on the designer's machine): the netlist has no such part, so every simulation lacks it."""
+    out = {}
+    for d, dirs, fs in os.walk(root):
+        dirs[:] = [x for x in dirs if not x.startswith(".")]
+        for f in fs:
+            if not f.endswith(".sch"):
+                continue
+            path = os.path.join(d, f)
+            try:
+                items = parse(open(path, errors="replace").read())
+            except Exception:                                   # noqa: BLE001 - an unreadable file is not ours to judge
+                continue
+            for kind, fl, _ in items:
+                if kind == "C" and fl and not fl[0].endswith(".tcl") and not _find_sym(fl[0], os.path.dirname(path)):
+                    out.setdefault(fl[0], []).append(os.path.relpath(path, root))
+    return out
 
 
 @functools.lru_cache(maxsize=None)

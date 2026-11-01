@@ -75,11 +75,14 @@ It judges only what it can see whole: a schematic that uses cells it cannot reso
 repository), or a difference only in pin or net names, is reported as not judged. A mismatch shows that the committed
 layout and schematic differ: either the chip is not the circuit that was simulated, or the schematic is out of date.
 
-Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both ways, median 0.25 s per cell):
-253 match; 60 warnings in 25 repositories (48 with different devices, 12 with sizes more than 5 % off); notes on 23
+Measured on 98 cloned Tiny Tapeout analog repositories (451 cells drawn both ways, median 0.18 s per cell):
+274 match; 51 warnings in 26 repositories (36 with different devices, 15 with sizes more than 5 % off); notes on 28
 cells that are the same circuit with ports named or wired otherwise, 13 with small size differences and 5 with
-layout dummies; not judged: 67 whose pins or wiring Netgen could not match, 8 empty layout views, 6 using cells we
-cannot resolve, 16 that could not be compared. Counts only; results on other people's designs are not published.
+layout dummies; 7 cells draw a pin in unconnected pieces (1 a project's top cell); not judged: 50 whose pins or
+wiring Netgen could not match, 8 empty layout views, 6 using cells we cannot resolve, 16 that could not be compared.
+Counts only; results on other people's designs are not published. (An earlier count, 253 match and 60 warnings,
+included 12 cells whose resistors and sources our netlister had dropped: symbols named by bare name or by another
+machine's PDK path, fixed in #154.)
 
 **As drawn, with its capacitance.** A layout that matches its schematic device for device still adds the capacitance
 of every wire, junction and overlap. For such a cell, the review runs its own power-up or stability test again,

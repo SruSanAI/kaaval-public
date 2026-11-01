@@ -12,7 +12,7 @@ import itertools, os, re, shutil, subprocess, threading, time
 
 from app import engine, inputs, planner, store
 from guard import sch_svg
-from kaaval_engine import extract, layout_check, postlayout, sim
+from kaaval_engine import extract, layout_check, netlist, postlayout, sim
 from kaaval_engine import plan as kplan
 
 WORK = os.path.expanduser(os.environ.get("KAAVAL_WORK", "~/.kaaval/repos"))
@@ -352,6 +352,18 @@ def review(rid, src, root=None):
                                         (f" and {len(xs) - 3} more" if len(xs) > 3 else ""),
                                         device=devs[0] if devs else "", detail=dict(x, devices=devs, files=files,
                                                                                     occurrences=len(xs))))
+        try:                                   # parts whose symbol is not in the repository are in no simulation
+            miss = netlist.missing_symbols(root)
+        except OSError:
+            miss = {}
+        if miss:
+            where = sorted({s for v in miss.values() for s in v})
+            store.event(rid, "audit", f"{sum(len(v) for v in miss.values())} component(s) use a symbol the repository "
+                                      f"does not contain ({', '.join(os.path.basename(k) for k in list(miss)[:4])}"
+                                      f"{', ...' if len(miss) > 4 else ''}; in {', '.join(where[:3])}"
+                                      f"{', ...' if len(where) > 3 else ''}): those parts are missing from every "
+                                      "simulation of these schematics, so their results describe an incomplete circuit.",
+                        "warn")
         lay, lay_f, lay_note = layout_check.review(root)       # the layout against the schematic it should build
         for f in lay_f:
             store.add_finding(rid, dict(f, kind="note" if f["severity"] == "info" else "risk"))

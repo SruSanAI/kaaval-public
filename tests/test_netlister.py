@@ -115,6 +115,32 @@ def test_code_block_devices_in_a_sub_cell():
     assert text.count("sky130_fd_pr__pfet_01v8") == 1, text           # the top level's own block is not copied
 
 
+def test_symbols_by_absolute_pdk_path_and_bare_name():
+    """A schematic saved on another machine names PDK symbols by its own absolute path
+    (/home/ttuser/pdk/sky130A/libs.tech/xschem/sky130_fd_pr/nfet_01v8.sym), and stock symbols by bare name
+    (res.sym, lab_pin.sym), which xschem finds in xschem_library/devices: both resolve, so no device or label is
+    dropped (98 cloned repos: unresolved component references 4603 -> 98)."""
+    d = tempfile.mkdtemp()
+    head = "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {}\nV {}\nS {}\nE {}\n"
+    open(os.path.join(d, "c.sch"), "w").write(head +
+        "C {/home/someone/pdk/sky130A/libs.tech/xschem/sky130_fd_pr/nfet_01v8.sym} 0 0 0 0 {name=M1 L=0.15 W=1 nf=1 "
+        "mult=1 model=nfet_01v8 spiceprefix=X}\n"
+        "C {res.sym} 200 0 0 0 {name=R1 value=1k}\nC {lab_pin.sym} 200 -30 0 0 {name=p1 lab=top}\n")
+    text = N.netlist(os.path.join(d, "c.sch"))
+    assert re.search(r"(?m)^XM1 .*sky130_fd_pr__nfet_01v8", text), text
+    assert re.search(r"(?m)^R1 top \S+ 1k", text), text
+
+
+def test_missing_symbols_are_listed():
+    """A component whose symbol is in neither the repository nor the libraries is named, with the schematic using it:
+    the netlist cannot hold it, and the review says so instead of simulating an incomplete circuit in silence."""
+    d = tempfile.mkdtemp()
+    head = "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {}\nV {}\nS {}\nE {}\n"
+    open(os.path.join(d, "top.sch"), "w").write(head + "C {/home/someone/ip/vco.sym} 0 0 0 0 {name=x1}\n"
+                                                "C {res.sym} 200 0 0 0 {name=R1 value=1k}\n")
+    assert N.missing_symbols(d) == {"/home/someone/ip/vco.sym": ["top.sch"]}
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

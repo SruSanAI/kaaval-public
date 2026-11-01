@@ -38,12 +38,20 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
 - Layout against schematic (Magic + Netgen, transistor level, in every review): on 98 cloned Tiny Tapeout analog
   repositories, 451 cells drawn both ways, 253 match and 60 warnings fall in 25 repositories (different devices,
   or sizes more than 5 % off), median 0.25 s per cell. Counts only.
+  7 cells in 7 repositories draw one of their pins in pieces that are not connected (Magic's `_uq` labels); 1 is a
+  project's top cell, where nothing above joins them.
 - As drawn, with its capacitance: a matched cell's own power-up / stability test re-runs on the layout extracted
   with its parasitic capacitance. Compared only when the test drives every input (in a pilot, all three
   differences of undriven tests were floating inputs): Muse Spark's biased plans are what it runs on.
 - Big cells: a flash ADC power-up went from 30 of 30 conditions unconfirmed (753 s) to 3 of 30 (662 s) with the
   windowed fine-step check; full-length ground truth agrees to 6 digits.
 - 45 conditions in 1.1-2.0 s for 6 of 8 sampled testbenches (50 / 124 s for the two largest).
+- A review is bounded: planned tests share 600 s. The flash ADC's full review takes 610 s instead of 1,968 s with the
+  same findings, and says that 72 of its 165 power-up conditions were not run (the old code ran one 1,366-device
+  design for 20 h).
+- Findings from a test that left an input undriven (stays off, undetermined start-up, weak output) are notes, not
+  warnings. Checked against silicon outcomes first: in backtest v2 that moves 24 warnings on chips that work and
+  none of the failures' own findings; oscillation stays a warning because one real op-amp oscillation came from such a test.
 - **FILL** silicon backtest: counts only, as `tools/score_backtest.py` prints them (rows, findings, unconfirmed, rails).
 - **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
 

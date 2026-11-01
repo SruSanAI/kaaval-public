@@ -90,6 +90,31 @@ def test_global_supply_label_reaches_sub_circuits():
         assert re.search(r"v\(out\) = 9\.0+e-01", out), out[-400:]
 
 
+def test_code_block_devices_in_a_sub_cell():
+    """A cell drawn as pins plus a code_shown block of transistor lines (only_toplevel=false): xschem copies the device
+    lines into the sub-circuit, so do we; its .control lines and dot-commands stay out, and at the top level the block
+    is still dropped (2 Nov: a design drawing its standard cells this way came out as empty cells)."""
+    d = tempfile.mkdtemp()
+    head = "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {}\nV {}\nS {}\nE {}\n"
+    open(os.path.join(d, "inv.sym"), "w").write(
+        "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {type=subcircuit\nformat=\"@name @pinlist @symname\"\n"
+        "template=\"name=x1\"\n}\nV {}\nS {}\nE {}\nB 5 -2.5 -2.5 2.5 2.5 {name=A dir=in}\n"
+        "B 5 7.5 -2.5 12.5 2.5 {name=Y dir=out}\n")
+    code = ('C {devices/code_shown.sym} 0 0 0 0 {name=s1 only_toplevel=false value="\n'
+            'X0 Y A VPWR VPWR sky130_fd_pr__pfet_01v8 w=0.42 l=0.15\n'
+            'X1 Y A VGND VGND sky130_fd_pr__nfet_01v8\n+ w=0.42 l=0.15\n.include evil.spice\n.control\nshell rm x\n.endc\n"}\n')
+    open(os.path.join(d, "inv.sch"), "w").write(head + code +
+        "C {devices/ipin.sym} -100 0 0 0 {name=p1 lab=A}\nC {devices/opin.sym} 100 0 0 0 {name=p2 lab=Y}\n")
+    open(os.path.join(d, "top.sch"), "w").write(head + code.replace("name=s1", "name=s2") +
+        "C {inv.sym} 0 0 0 0 {name=x1}\n")
+    text = N.netlist(os.path.join(d, "top.sch"))
+    body = text.split(".subckt inv", 1)[1].split(".ends", 1)[0]
+    assert "X0 Y A VPWR VPWR sky130_fd_pr__pfet_01v8 w=0.42 l=0.15" in body, text
+    assert "X1 Y A VGND VGND sky130_fd_pr__nfet_01v8 w=0.42 l=0.15" in body, text
+    assert ".include" not in text and "shell" not in text and ".control" not in text, text
+    assert text.count("sky130_fd_pr__pfet_01v8") == 1, text           # the top level's own block is not copied
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

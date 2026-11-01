@@ -7,7 +7,8 @@ net1, net2, ... Each device line is produced from the symbol's own format= strin
 with the instance attributes over the symbol's template defaults, which is how xschem builds it.
 
 Dropped on purpose: netlist_commands blocks (code.sym / code_shown.sym: .control, .include, shell), launchers and
-probes. A testbench therefore comes out as circuit only; analyses and models are added by our own runner.
+probes. A testbench therefore comes out as circuit only; analyses and models are added by our own runner. In a
+sub-cell, a code block's device lines are kept (code_devices): xschem copies them into the sub-circuit.
 
     python -m kaaval_engine.netlist path/to/top.sch > top.spice
 """
@@ -133,7 +134,7 @@ def build(sch_path, top=True, done=None):
     done = {} if done is None else done
     local = os.path.dirname(os.path.abspath(sch_path))
     items = parse(open(sch_path, errors="replace").read())
-    uf, wires, wire_lab, insts = _UF(), [], {}, []
+    uf, wires, wire_lab, insts, code = _UF(), [], {}, [], []
     for kind, f, props in items:
         if kind == "N":
             w = tuple(map(float, f[:4]))
@@ -151,6 +152,11 @@ def build(sch_path, top=True, done=None):
             if not path:
                 continue
             sd = symbol(path)
+            if sd["type"] == "netlist_commands" and not top:
+                a = dict(sd["template"], **_props(props))
+                if str(a.get("only_toplevel", "false")).strip().lower() not in ("true", "1"):
+                    code += code_devices(a.get("value", ""))
+                continue
             if sd["type"] in SKIP_TYPES or not sd["format"] and sd["type"] not in LABEL_TYPES:
                 continue
             x0, y0, rot, flip = float(f[1]), float(f[2]), int(f[3]), int(f[4])
@@ -239,10 +245,35 @@ def build(sch_path, top=True, done=None):
                 done[symname] = True
                 subckts += build(sub, top=False, done=done) if False else _subckt(sub, symname, sd, done)
         _emit(lines, sd, a, pinlist, symname, pin_nets[0])
+    lines += code
     if top:
         g = sorted((done.get("__globals__") or {}).values())
         return subckts + lines + [f".GLOBAL {n}" for n in g]           # one line per net, as xschem writes it
     return subckts, lines, ports
+
+
+DEVICE_LINE = re.compile(r"^[xmrcdqlXMRCDQL][^\s=]*\s+\S")
+
+
+def code_devices(value):
+    """The device lines of a code block (code.sym / code_shown.sym) in a sub-cell: xschem copies a block that is not
+    only_toplevel into the sub-circuit, and designers draw cells that way (a standard cell's transistors pasted as
+    text). Element lines only (X M R C D Q L, '+' continuations joined); every dot-command, .control block and shell
+    line stays out, as at the top level. In 98 cloned repos: 9 sub-cell blocks, 111 device lines (one design, 3 shuttles)."""
+    out, ctl = [], False
+    for raw in value.strip().strip('"').splitlines():
+        l = raw.strip()
+        if l.lower().startswith(".control"):
+            ctl = True
+        elif l.lower().startswith(".endc"):
+            ctl = False
+        elif ctl:
+            continue
+        elif l.startswith("+") and out:
+            out[-1] += " " + l[1:].strip()
+        elif DEVICE_LINE.match(l) and not re.search(r"[`$;|]", l):
+            out.append(l)
+    return out
 
 
 def _emit(lines, sd, a, pinlist, symname, pin_nets=None):

@@ -150,6 +150,25 @@ X6 xd/OUT VSS VSS VSS sky130_fd_pr__nfet_01v8 w=1 l=1
     assert L.off_devices(flat) == {"sky130_fd_pr__nfet_01v8": 2, "sky130_fd_pr__pfet_01v8": 2}
 
 
+def test_an_empty_layout_view_is_not_compared():
+    if not L.available():
+        return
+    d = _repo()
+    mag = os.path.join(d, "mag", "tt_um_kaaval_layout.mag")
+    text = open(mag).read()
+    i, j = text.index("<< nmos >>"), text.index("<< labels >>")
+    open(mag, "w").write(text[:i] + "<< metal1 >>\nrect 0 0 200 100\n" + text[j:])     # metal and labels only
+    r = L.compare(d, L.pairs(d)[0])
+    assert r["verdict"] == "layout has no devices" and L.finding(r) is None, r
+
+
+def test_same_circuit_with_other_ports_is_a_note():
+    r = dict(verdict="match, ports differ", cell="c", mag="c.mag", sch="c.sch",
+             ports=["OE |(no matching pin)", "Circuit1 instance nfet:6 pin li_1# connections are no connects (1)"])
+    f = L.finding(r)
+    assert f["rule"] == "layout/ports_differ" and f["severity"] == "info" and "no connects" in f["title"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

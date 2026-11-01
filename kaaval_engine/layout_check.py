@@ -265,6 +265,11 @@ def compare(root, pair, timeout=300):
     if not lay:
         out["error"] = err
         return out
+    devices = lambda t: sum(1 for l in t.splitlines() if l[:1] and l[:1].lower() in "xmrcdq")
+    if not devices(lay):                              # metal and labels only: an abstract or placeholder view
+        out["verdict"] = "layout has no devices"
+        out["error"] = "the layout cell holds no devices (an abstract or placeholder view), so it is not compared"
+        return out
     with tempfile.TemporaryDirectory(prefix="kaaval_lvs_") as t:
         open(os.path.join(t, "layout.spice"), "w").write(lay)
         open(os.path.join(t, "schematic.spice"), "w").write(sch)
@@ -288,6 +293,14 @@ def compare(root, pair, timeout=300):
     if re.search(r"(?i)property errors were found|with property errors", text + res):
         out["verdict"] = "sizes differ"                  # the same circuit, with devices of other sizes (W, L, value)
         out["sizes"] = sizes(text)
+        return out
+    if not out["match"] and re.search(r"(?i)failed pin matching", res) and \
+            re.search(r"(?i)^Netlists match uniquely( with [a-z ]*errors)?\.?\s*$", text, re.M):
+        out["verdict"] = "match, ports differ"              # the same circuit inside; its ports are named or wired otherwise
+        out["ports"] = [l.strip() for l in text.splitlines()
+                        if re.search(r"(?i)no matching pin|no connects|tied together|disagree on pin", l)][:12]
+        if re.search(r"(?i)property errors", text):
+            out["sizes"] = sizes(text)
         return out
     if not out["match"]:
         out["summary"] = _summary(text)
@@ -320,6 +333,12 @@ def finding(r):
                     title=(f"{r['cell']}: the committed layout draws devices at other sizes than its schematic (Netgen LVS: the same "
                            f"circuit, with property errors" + (f"; up to {worst * 100:.0f} % off" if ds else "") +
                            "): " + "; ".join(r.get("sizes", [])[:4]))[:600],
+                    location=f"{r['mag']} vs {r['sch']}", detail=r)
+    if r.get("verdict") == "match, ports differ":
+        return dict(rule="layout/ports_differ", severity="info", device=r["cell"],
+                    title=(f"{r['cell']}: the layout is the same circuit as its schematic, but its ports are named or "
+                           f"wired otherwise (Netgen LVS: " + "; ".join(r.get("ports", [])[:3]) + "). A port the layout "
+                           "leaves unconnected is floating on the chip.")[:700],
                     location=f"{r['mag']} vs {r['sch']}", detail=r)
     if r.get("verdict") != "devices differ":
         return None
@@ -366,7 +385,9 @@ def review(root, max_cells=12, budget=240.0):
     skipped = len(ps) - len(res)
     note = (f"Layout against schematic (Magic extraction, Netgen LVS): {len(ps)} cell(s) drawn both ways; "
             f"{v('match')} match, {v('devices differ')} with different devices, {v('sizes differ')} with different device "
-            f"sizes, {v('schematic incomplete')} not judged (cells we could not resolve), {v('pins or nets only')} differ only in "
+            f"sizes, {v('match, ports differ')} the same circuit with ports named or wired otherwise, {v('schematic incomplete')} not "
+            f"judged (cells we could not resolve), {v('layout has no devices')} with an empty layout view, "
+            f"{v('pins or nets only')} differ only in "
             f"pin or net names (not judged), {sum(1 for r in res if r['match'] is None)} could not be compared"
             + (f", {skipped} not compared (time)" if skipped else "") + ".")
     return res, fs, note

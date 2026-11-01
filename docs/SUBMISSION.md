@@ -35,13 +35,23 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   - the LDO's load-step droop puts setup on `ss_n40C_1v35`, not `1v44`;
   - a StrongARM latch decides wrong in 30 of 40 mismatch samples at ±1 mV, so its `.lib` is refused there.
 - Netlister: 95.3 % of 8,394 devices identical to xschem's own output, on 434 netlists.
+- Layout against schematic (Magic + Netgen, transistor level, in every review): on 98 cloned Tiny Tapeout analog
+  repositories, 451 cells drawn both ways, 253 match and 60 warnings fall in 25 repositories (different devices,
+  or sizes more than 5 % off), median 0.25 s per cell. Counts only.
+- As drawn, with its capacitance: a matched cell's own power-up / stability test re-runs on the layout extracted
+  with its parasitic capacitance. Compared only when the test drives every input (in a pilot, all three
+  differences of undriven tests were floating inputs): Muse Spark's biased plans are what it runs on.
+- Big cells: a flash ADC power-up went from 30 of 30 conditions unconfirmed (753 s) to 3 of 30 (662 s) with the
+  windowed fine-step check; full-length ground truth agrees to 6 digits.
+- 45 conditions in 1.1-2.0 s for 6 of 8 sampled testbenches (50 / 124 s for the two largest).
 - **FILL** silicon backtest: counts only, as `tools/score_backtest.py` prints them (rows, findings, unconfirmed, rails).
 - **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
 
 ## Built during the event (startup-track label)
 
 All of `SruSanAI/kaaval`, starting 27 Oct: the netlister, the engine, the planner, the review UI, chip view,
-Silicon Twin, the timing outputs (`.lib`, SDC, supply corner), the backtest tools.
+Silicon Twin, the timing outputs (`.lib`, SDC, supply corner), layout against schematic and post-layout re-runs,
+the backtest tools.
 
 Pre-existing and declared: Minnal, our private analog designer. Kaaval runs standalone without it. With
 `MINNAL_URL`/`MINNAL_KEY` set, only the sizing-fix search is called on Minnal.

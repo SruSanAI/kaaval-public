@@ -226,6 +226,7 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       'analog/weak_output': 'This output cannot drive the pad: what you measure depends on your meter.',
       'layout/devices_differ': 'The layout builds other devices than the schematic: the chip is not the circuit you simulated, or the schematic is out of date.',
       'layout/sizes_differ': 'The layout draws its devices at other sizes than the schematic.',
+      'layout/ports_differ': 'The same circuit as the schematic, but its ports are named or wired otherwise: check that every port is connected.',
       'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.'};
     const plain = PLAIN[f.rule] ? `<div class="plain">${PLAIN[f.rule]}</div>` : '';
     const st = (f.detail && f.detail.states) || [];

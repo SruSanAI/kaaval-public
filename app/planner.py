@@ -365,7 +365,9 @@ def _rules(ws, log, max_cells=20, docs=""):
     # netlists; prefer the schematic, then a plain netlist, then an extracted one (parasitic copies last)
     def name(c):
         n = c["cell"].split("#")[-1] if "#" in c["cell"] else os.path.splitext(os.path.basename(c["cell"]))[0]
-        return re.sub(r"(?i)_parax$|\.mag$", "", n).lower()
+        # an extracted or flattened copy is the same circuit (suffixes seen in 98 repos: _parax 79, _pex 25,
+        # _extracted 9, _ext 4, _flat 3)
+        return re.sub(r"(?i)_(parax|pex|extracted|ext|flat)$|\.mag$", "", n).lower()
     rank = lambda c: (0 if "#" not in c["cell"] else 2 if re.search(r"(?i)\.(sim|lvs|pex|rc)\.|parax|_rc\b|pex", c["cell"]) else 1)
     best = {}
     cells = engine.cells(ws)

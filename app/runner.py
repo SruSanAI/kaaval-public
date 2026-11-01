@@ -231,7 +231,8 @@ def keep_plans(rid, lv, res, by):
                                      f"They count as not tested, not as findings.", "warn")
         for f in r.get("findings") or []:
             nf += 1
-            store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"], kind="risk", title=f["message"],
+            store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"],
+                                        kind="note" if f["severity"] == "info" else "risk", title=f["message"],
                                         location=f"{pr['plan']['cell']} · " + ("test planned by Muse Spark" if by == "muse"
                                                                                else "baseline power-up (no model)"),
                                         device=f.get("device", ""), detail=dict(f, plan=pr["plan"], planner=by, k=k)))

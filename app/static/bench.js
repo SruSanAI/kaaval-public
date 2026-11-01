@@ -227,7 +227,8 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       'layout/devices_differ': 'The layout builds other devices than the schematic: the chip is not the circuit you simulated, or the schematic is out of date.',
       'layout/sizes_differ': 'The layout draws its devices at other sizes than the schematic.',
       'layout/ports_differ': 'The same circuit as the schematic, but its ports are named or wired otherwise: check that every port is connected.',
-      'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.'};
+      'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.',
+      'layout/split_pin': 'A pin is drawn in pieces that are not connected to each other: only what joins them above makes them one net.'};
     const plain = PLAIN[f.rule] ? `<div class="plain">${PLAIN[f.rule]}</div>` : '';
     const st = (f.detail && f.detail.states) || [];
     const states = f.rule === 'analog/two_states' && st.length === 2 ? `<div class="states num">${st.map((x, i) =>

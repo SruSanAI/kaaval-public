@@ -169,6 +169,46 @@ def test_same_circuit_with_other_ports_is_a_note():
     assert f["rule"] == "layout/ports_differ" and f["severity"] == "info" and "no connects" in f["title"]
 
 
+SPLIT = """.subckt buffer in out vdd vdd_uq0 vdd_uq1 vss
+X0 out in vss vss sky130_fd_pr__nfet_01v8 w=1 l=0.15
+X1 out in vdd vdd sky130_fd_pr__pfet_01v8 w=2 l=0.15
+X2 out in vdd_uq0 vdd_uq0 sky130_fd_pr__pfet_01v8 w=2 l=0.15
+.ends
+"""
+
+
+def test_a_pin_in_pieces_is_split():
+    assert L.split_nets(SPLIT) == {"vdd": 3}
+    assert L.split_nets(SPLIT.replace(" vdd_uq0 vdd_uq1", "")) == {}
+    r = dict(cell="buffer", mag="mag/buffer.mag", split={"vdd": 3})
+    f = L.split_finding(r)
+    assert f["rule"] == "layout/split_pin" and f["severity"] == "info" and "vdd in 3 pieces" in f["title"]
+    g = L.split_finding(dict(r, cell="tt_um_kaaval_buffer"))            # the project's top cell: nothing above joins them
+    assert g["severity"] == "warn" and "only the piece" in g["title"]
+    assert L.split_finding(dict(r, split={})) is None
+
+
+def test_global_labels_are_one_net_in_the_flat_schematic():
+    """A sub-cell powered by a vdd.sym label (global=true): its VDD is the top's VDD in the flat schematic the layout
+    is compared with, not a separate x1/VDD (a ring of such stages read as 'pins or nets only', 2 Nov)."""
+    d = tempfile.mkdtemp()
+    head = "v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {}\nV {}\nS {}\nE {}\n"
+    sym = ("v {xschem version=3.4.5 file_version=1.2}\nG {}\nK {type=subcircuit\nformat=\"@name @pinlist @symname\"\n"
+           "template=\"name=x1\"\n}\nV {}\nS {}\nE {}\nB 5 -2.5 -2.5 2.5 2.5 {name=mid dir=out}\n")
+    open(os.path.join(d, "div.sym"), "w").write(sym)
+    open(os.path.join(d, "div.sch"), "w").write(head +
+        "C {devices/res.sym} 0 0 0 0 {name=R1 value=1k}\nC {devices/vdd.sym} 0 -30 0 0 {name=l1 lab=VDD}\n"
+        "C {devices/lab_pin.sym} 0 30 0 0 {name=p1 lab=mid}\nC {devices/opin.sym} 100 0 0 0 {name=p3 lab=mid}\n")
+    open(os.path.join(d, "top.sym"), "w").write(sym.replace("name=mid dir=out", "name=out dir=out"))
+    open(os.path.join(d, "top.sch"), "w").write(head +
+        "C {div.sym} 0 0 0 0 {name=x1}\nC {devices/lab_pin.sym} 0 0 0 0 {name=p1 lab=out}\n"
+        "C {div.sym} 0 100 0 0 {name=x2}\nC {devices/lab_pin.sym} 0 100 0 0 {name=p2 lab=out}\n"
+        "C {devices/opin.sym} 100 0 0 0 {name=p3 lab=out}\n")
+    flat = L.schematic_subckt(d, dict(cell="top", sch="top.sch", sym="top.sym", mag=""))
+    res = [l.split() for l in flat.splitlines() if l.split() and l.split()[0].lower().endswith("r1")]
+    assert len(res) == 2 and all("VDD" in r for r in res) and "x1/VDD" not in flat, flat
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

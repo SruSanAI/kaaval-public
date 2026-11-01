@@ -84,6 +84,24 @@ def test_pad_drive_only_for_cells_no_other_cell_uses():
     assert any("used inside xschem/adc.sch" in l for l in logs), logs
 
 
+def test_an_extracted_copy_is_the_same_circuit():
+    """A _pex / _extracted copy of a cell that has a schematic is not powered up a second time (backtest row 11: a
+    comparator's _pex copy was tested with floating inputs beside its schematic)."""
+    from app import planner
+    cells = [dict(cell="x/comp_p.sch", ports=["vdd", "vss", "inp", "inn", "vout"], devices=10, netlist=""),
+             dict(cell="pex/top_pex.spice#comp_p_pex", ports=["vdd", "vss", "inp", "inn", "vout"], devices=60,
+                  netlist="")]
+    planned = []
+    real = planner.engine.cells, planner.engine.plan
+    planner.engine.cells = lambda ws: cells
+    planner.engine.plan = lambda ws, ep, **kw: planned.append((ep["cell"], ep["kind"])) or dict(ok=True, findings=[])
+    try:
+        planner._rules("ws", lambda *a, **k: None)
+    finally:
+        planner.engine.cells, planner.engine.plan = real
+    assert {c for c, _ in planned} == {"x/comp_p.sch"}, planned
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

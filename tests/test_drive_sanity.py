@@ -27,6 +27,7 @@ def test_weak_source_keeps_its_resistance():
     assert "undriven" not in f["message"]
     g, = one([1.799, 1.795, 1.752, 1.294, 0.172], floating=["inp", "inn"])
     assert "left inn, inp undriven" in g["message"]
+    assert f["severity"] == "warn" and g["severity"] == "info"      # an undriven input decides the level: a note
 
 
 def test_strong_output_passes():

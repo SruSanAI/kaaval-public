@@ -21,6 +21,7 @@ def test_swing_on_an_internal_node_is_still_an_oscillation():
     f = checks.startup(sweep({"INPUT": 0.2, "vout": 0.44}), floating=["input"])
     assert [x["rule"] for x in f] == ["analog/oscillates"] and f[0]["device"] == "vout", f
     assert "left input undriven" in f[0]["message"] and "bias it to confirm" in f[0]["message"], f[0]["message"]
+    assert f[0]["severity"] == "warn"                  # an oscillation stays a warning (backtest row 8's op-amp)
     plain = checks.startup(sweep({"INPUT": 0.078}))                                    # (no floating list)
     assert [x["rule"] for x in plain] == ["analog/oscillates"] and "undriven" not in plain[0]["message"]
 
@@ -41,6 +42,16 @@ def test_no_startup_with_undriven_inputs_does_not_claim_a_missing_startup_circui
     assert "needs a start-up circuit" not in f["message"]
     g, = checks.startup(sw)
     assert "it needs a start-up circuit" in g["message"]
+    assert f["severity"] == "info" and g["severity"] == "warn"     # the undriven inputs alone can hold it off
+
+
+def test_marginal_startup_with_undriven_inputs_is_a_note():
+    sw = {("tt", 27, 1.0): (None, "undetermined: the power-up result changes with the simulator's time step (1 V at "
+                                  "2 ns, 0 V at 1 ns)")}
+    f, = checks.startup(sw, floating=["inp"])
+    assert f["rule"] == "analog/marginal_startup" and f["severity"] == "info" and "left inp undriven" in f["message"]
+    g, = checks.startup(sw)
+    assert g["severity"] == "warn" and "undriven" not in g["message"]
 
 
 def test_a_real_power_up_keeps_an_undriven_pin_out_of_the_state(tmp_path=None):

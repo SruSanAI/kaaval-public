@@ -162,6 +162,14 @@ SU_TEMPS = TEMPS
 SU_VSCALES = [0.9, 1.0]
 
 
+# A power-up that stays off, lands in an undetermined state, or an output that sags under a load, in a test that left
+# an input undriven: the floating input alone can explain each, so it is a note to re-test with the input biased, not
+# a warning. Backtest v2 (2 Nov), with the plans' inputs recomputed: these three rules with undriven inputs were 24
+# findings on chips that work on silicon and none of the in-scope failures' own rules. An oscillation keeps its warning
+# (row 8's real op-amp oscillation came from a test with undriven inputs).
+UNDRIVEN_SEVERITY = "info"
+
+
 def startup(ssweep, vtol=0.1, floating=()):
     """Power-up findings from sim.startup_corner results {(corner, temp, vscale): (result, err)}.
 
@@ -213,7 +221,8 @@ def startup(ssweep, vtol=0.1, floating=()):
     out = []
     if dead:
         c, r = min(dead, key=lambda x: x[1]["i_end"] / x[1]["i_op"])
-        out.append(dict(rule="analog/no_startup", severity="warn", device="supply", worst=c, n_bad=len(dead), n=n,
+        out.append(dict(rule="analog/no_startup", severity=UNDRIVEN_SEVERITY if floating_names else "warn",
+                        device="supply", worst=c, n_bad=len(dead), n=n, floating=sorted(floating_names),
                         conds=[list(x[0]) for x in dead], states=[dict(i=r["i_op"]), dict(i=r["i_end"])],
                         message=f"Powered up from 0 V, the circuit stays off at {len(dead)}/{n} conditions: the "
                                 f"supply current settles at {_amps(r['i_end'])} while its DC analysis reports a "
@@ -254,13 +263,17 @@ def startup(ssweep, vtol=0.1, floating=()):
                                 f"hysteresis or flip-flop is meant to have two."))
     if marg:
         c, e = marg[0]
-        out.append(dict(rule="analog/marginal_startup", severity="warn", device="supply", worst=c, n_bad=len(marg),
+        out.append(dict(rule="analog/marginal_startup", severity=UNDRIVEN_SEVERITY if floating_names else "warn",
+                        device="supply", worst=c, n_bad=len(marg), floating=sorted(floating_names),
                         n=n + len(marg), conds=[list(x[0]) for x in marg],
                         message=f"At {len(marg)} condition(s) the power-up from 0 V lands in a different state each time "
                                 f"the simulator's time step is refined (at {c[0]}, {c[1]} °C, supply ×{c[2]}: "
                                 f"{e.split('(', 1)[-1].rstrip(')')}). Nothing pushes the circuit firmly into its working "
                                 f"state: on silicon, where it ends up depends on noise and on how the supply rises. A "
-                                f"start-up circuit that acts until the block is fully on removes the doubt."))
+                                f"start-up circuit that acts until the block is fully on removes the doubt." +
+                                (f" This test left {', '.join(sorted(floating_names))} undriven, and a floating input "
+                                 f"alone can leave the state undetermined: bias "
+                                 f"{'it' if len(floating_names) == 1 else 'them'} to confirm." if floating_names else "")))
     return out
 
 
@@ -446,8 +459,8 @@ def drive(per, ports, board_min=1e6, tol=0.02, loads=(1e7, 1e6, 1e5, 1e4), float
     resistance. `floating` names input pins the test left undriven; a finding made with them says so."""
     out = []
     floating = sorted(floating)
-    caveat = (f" This test left {', '.join(floating)} undriven: bias {'it' if len(floating) == 1 else 'them'} to "
-              "confirm." if floating else "")
+    caveat = (f" This test left {', '.join(floating)} undriven, and an undriven input decides where the output rests, "
+              f"so nothing is concluded yet: bias {'it' if len(floating) == 1 else 'them'} to confirm." if floating else "")
     for i, port in enumerate(ports):
         worst, n = None, 0
         for c, (r, e) in per.items():
@@ -470,7 +483,8 @@ def drive(per, ports, board_min=1e6, tol=0.02, loads=(1e7, 1e6, 1e5, 1e4), float
             rout = float("inf") if hiz or not v[2] else board_min * (v[0] - v[2]) / v[2]
             at = ", ".join(f"{fmt_ohm(l)} {x:.3f} V" for l, x in zip(loads, v[1:]))
             what = "nothing driving it (high impedance)" if hiz else f"about {fmt_ohm(rout)} output resistance"
-            out.append(dict(rule="analog/weak_output", severity="warn", device=port, worst=c, n=n, rout=rout,
+            out.append(dict(rule="analog/weak_output", severity=UNDRIVEN_SEVERITY if floating else "warn", device=port,
+                            worst=c, n=n, rout=rout, floating=floating,
                             volts=v, message=f"{port} has {what} and nothing to "
                             f"drive the pad: {v[0]:.3f} V unloaded, {at} to ground (at {c[0]}, {c[1]} \u00b0C, supply "
                             f"x{c[2]:g}). Tiny Tapeout's board guide asks for pull-downs of at least "

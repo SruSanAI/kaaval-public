@@ -115,7 +115,10 @@ def unresolved(flat):
 def schematic_subckt(root, pair):
     """The schematic as `.subckt <cell> <ports>` (its sub-circuits first), the way xschem writes a cell."""
     p = os.path.join(root, pair["sch"])
-    text = "\n".join(N._subckt(p, pair["cell"], N.symbol(os.path.join(root, pair["sym"])), {})) + "\n"
+    done = {}
+    text = "\n".join(N._subckt(p, pair["cell"], N.symbol(os.path.join(root, pair["sym"])), done)) + "\n"
+    # global labels (vdd.sym, gnd.sym) anywhere below: one net in every sub-circuit, as the netlister's top level says
+    text += "".join(f".GLOBAL {g}\n" for g in sorted((done.get("__globals__") or {}).values()))
     # standard cells the schematic only names (the layout extraction holds their transistors): their PDK definitions;
     # then flat, like the layout's extraction (extract.cell flat=True)
     full = stdcells.defs_for(text) + "\n" + text
@@ -245,6 +248,21 @@ def off_devices(text):
     return out
 
 
+def split_nets(lay):
+    """{net: pieces} for nets the layout draws in pieces that are not connected: Magic names the second and later
+    pieces of one label <name>_uq<N>. Only the cell's own pins are counted (a split pin may be joined by the level
+    above); returns {} when nothing is split."""
+    m = re.search(r"(?im)^\.subckt\s+\S+((?:.*\n\+.*)*.*)", lay)
+    ports = [p for p in (m.group(1).replace("\n+", " ").split() if m else []) if "=" not in p]
+    low = {p.lower() for p in ports}
+    out = {}
+    for p in ports:
+        b = re.sub(r"(?i)_uq\d+$", "", p)
+        if b != p and b.lower() in low:
+            out[b] = out.get(b, 1) + 1
+    return out
+
+
 def compare(root, pair, timeout=300):
     """Netgen LVS of the cell's extracted layout against its schematic."""
     out = dict(cell=pair["cell"], sch=pair["sch"], mag=pair["mag"], match=None, summary=[], error=None)
@@ -271,6 +289,7 @@ def compare(root, pair, timeout=300):
         out["verdict"] = "layout has no devices"
         out["error"] = "the layout cell holds no devices (an abstract or placeholder view), so it is not compared"
         return out
+    out["split"] = split_nets(lay)
     with tempfile.TemporaryDirectory(prefix="kaaval_lvs_") as t:
         open(os.path.join(t, "layout.spice"), "w").write(lay)
         open(os.path.join(t, "schematic.spice"), "w").write(sch)
@@ -290,13 +309,14 @@ def compare(root, pair, timeout=300):
         return out
     res = final.group(1).strip()
     out["result"] = res
-    out["match"] = bool(re.fullmatch(r"(?i)circuits match uniquely\.?", res))
+    # "with N symmetries": the same circuit, some devices interchangeable (a ring of identical stages) - a match
+    out["match"] = bool(re.fullmatch(r"(?i)circuits match (uniquely|with \d+ symmetr(y|ies))\.?", res))
     if re.search(r"(?i)property errors were found|with property errors", text + res):
         out["verdict"] = "sizes differ"                  # the same circuit, with devices of other sizes (W, L, value)
         out["sizes"] = sizes(text)
         return out
     if not out["match"] and re.search(r"(?i)failed pin matching", res) and \
-            re.search(r"(?i)^Netlists match uniquely( with [a-z ]*errors)?\.?\s*$", text, re.M):
+            re.search(r"(?i)^Netlists match (uniquely|with \d+ symmetr(y|ies))( with [a-z ]*errors)?\.?\s*$", text, re.M):
         out["verdict"] = "match, ports differ"              # the same circuit inside; its ports are named or wired otherwise
         out["ports"] = [l.strip() for l in text.splitlines()
                         if re.search(r"(?i)no matching pin|no connects|tied together|disagree on pin", l)][:12]
@@ -322,6 +342,25 @@ def compare(root, pair, timeout=300):
 
 def _short(model):
     return re.sub(r"(?i)^sky130_fd_pr__", "", model)
+
+
+TOP = re.compile(r"(?i)^tt_um_")           # a Tiny Tapeout project's top cell: nothing above it joins its pins
+
+
+def split_finding(r):
+    """A note (sub-cell) or warning (the project's top cell) for pins the layout draws in unconnected pieces, or None."""
+    sp = r.get("split") or {}
+    if not sp:
+        return None
+    what = ", ".join(f"{n} in {k} pieces" for n, k in sorted(sp.items()))
+    top = bool(TOP.match(r["cell"]))
+    return dict(rule="layout/split_pin", severity="warn" if top else "info", device=r["cell"],
+                title=(f"{r['cell']}: the layout draws {what} that are not connected to each other (Magic labels the "
+                       f"extra pieces _uq). " + ("This is the project's top cell, so nothing above it joins them: only "
+                                                 "the piece the chip's connection reaches is driven." if top else
+                                                 "They are connected only if every cell that uses this one joins "
+                                                 "them."))[:600],
+                location=f"{r['mag']}", detail=r)
 
 
 def finding(r):
@@ -381,7 +420,7 @@ def review(root, max_cells=12, budget=240.0):
         if time.time() - t0 > budget:
             break
         res.append(compare(root, p, timeout=max(10, int(budget - (time.time() - t0)))))
-    fs = [f for f in map(finding, res) if f]
+    fs = [f for f in map(finding, res) if f] + [f for f in map(split_finding, res) if f]
     v = lambda k: sum(1 for r in res if r.get("verdict") == k)
     skipped = len(ps) - len(res)
     note = (f"Layout against schematic (Magic extraction, Netgen LVS): {len(ps)} cell(s) drawn both ways; "

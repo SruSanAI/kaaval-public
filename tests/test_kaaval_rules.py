@@ -54,7 +54,7 @@ def test_foundry_standard_cells_are_never_powered_up():
     planned, logs = [], []
     real = planner.engine.cells, planner.engine.plan
     planner.engine.cells = lambda ws: cells
-    planner.engine.plan = lambda ws, ep: planned.append(ep["cell"]) or dict(ok=True, findings=[])
+    planner.engine.plan = lambda ws, ep, **kw: planned.append(ep["cell"]) or dict(ok=True, findings=[])
     try:
         planner._rules("ws", lambda *a, **k: logs.append(a[1]))
     finally:
@@ -74,7 +74,7 @@ def test_pad_drive_only_for_cells_no_other_cell_uses():
     kinds, logs = [], []
     real = planner.engine.cells, planner.engine.plan
     planner.engine.cells = lambda ws: cells
-    planner.engine.plan = lambda ws, ep: kinds.append((ep["cell"], ep["kind"])) or dict(ok=True, findings=[])
+    planner.engine.plan = lambda ws, ep, **kw: kinds.append((ep["cell"], ep["kind"])) or dict(ok=True, findings=[])
     try:
         planner._rules("ws", lambda *a, **k: logs.append(a[1]))
     finally:

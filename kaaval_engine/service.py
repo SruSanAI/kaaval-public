@@ -367,7 +367,8 @@ def run_plan():
     errs = kplan.validate(pl, root)
     if errs:
         return jsonify({"ok": False, "errors": errs}), 422
-    with _SEM:
+    secs = d.get("budget")                 # seconds this plan may simulate for (the review's share), or none
+    with _SEM, sim.until(float(secs) if isinstance(secs, (int, float)) and secs > 0 else None):
         r = kplan.run(pl, root)
     return jsonify(r)
 

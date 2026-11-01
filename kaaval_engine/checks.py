@@ -34,7 +34,7 @@ def pvt_sweep(tb, corners=CORNERS, temps=TEMPS, vscales=VSCALES, workers=2, on_r
         if c not in out:
             by_corner.setdefault(c[0], []).append((c[1], c[2]))
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(sim.op_points_corner, tb, k, tv): k for k, tv in by_corner.items()}
+        futs = {sim.spawn(ex, sim.op_points_corner, tb, k, tv): k for k, tv in by_corner.items()}
         for f in as_completed(futs):
             k = futs[f]
             for (t, v), r in f.result().items():

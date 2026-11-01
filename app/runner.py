@@ -12,7 +12,7 @@ import itertools, os, re, shutil, subprocess, threading, time
 
 from app import engine, inputs, planner, store
 from guard import sch_svg
-from kaaval_engine import extract, layout_check, postlayout
+from kaaval_engine import extract, layout_check, postlayout, sim
 from kaaval_engine import plan as kplan
 
 WORK = os.path.expanduser(os.environ.get("KAAVAL_WORK", "~/.kaaval/repos"))
@@ -131,6 +131,9 @@ class Live:
             self.save()
 
 
+POST_BUDGET = float(os.environ.get("KAAVAL_POST_BUDGET", "300") or 0)     # seconds for the as-drawn re-runs; 0 = none
+
+
 def post_layout(rid, lv, root, files, lay, max_cells=3):
     """The circuit as drawn: for cells whose layout matched their schematic (layout_check), the power-up and
     stability tests the review ran on the schematic run again, unchanged, on the layout extracted with its
@@ -170,14 +173,20 @@ def post_layout(rid, lv, root, files, lay, max_cells=3):
         return
     ws2 = engine.upload(dict(files, **extra))
     agree = []
-    for k, pr in todo:
+    clock = planner.Clock(POST_BUDGET)
+    for i, (k, pr) in enumerate(todo):
         r = ok[pr["plan"]["cell"]]
         if postlayout.post_path(r["cell"]) not in extra:
             continue
         try:
-            res = engine.plan(ws2, dict(pr["plan"], cell=postlayout.post_cell(r["cell"])))
+            res = planner.run_plan(ws2, dict(pr["plan"], cell=postlayout.post_cell(r["cell"])), clock,
+                                   [p["plan"] for _, p in todo[i + 1:]])
         except engine.EngineError as e:
             res = dict(ok=False, errors=[str(e)])
+        if res.get("skipped"):
+            store.event(rid, "muse", f"{r['cell']} ({pr['plan']['kind']}): not compared as drawn: the post-layout "
+                                     f"time budget ({POST_BUDGET:.0f} s) was spent", "info")
+            continue
         if not res.get("ok"):
             store.event(rid, "muse", f"{r['cell']} ({pr['plan']['kind']}): the post-layout test could not run: "
                                      f"{'; '.join(res.get('errors') or [])[:300]}", "warn")
@@ -198,7 +207,7 @@ def post_layout(rid, lv, root, files, lay, max_cells=3):
 
 def keep_plans(rid, lv, res, by):
     """Store each planned test's results for the bench's evidence views, and its findings as findings."""
-    kept, nf, nu = list(lv.d.get("plan_results") or []), 0, 0
+    kept, nf, nu, ns = list(lv.d.get("plan_results") or []), 0, 0, 0
     for pr in res["plans"]:
         r = pr["result"] or {}
         k = len(kept)
@@ -209,7 +218,13 @@ def keep_plans(rid, lv, res, by):
                                      f"conditions in {r['seconds']:.0f} s")
         rows = r.get("results") or []
         unc = [x for x in rows if str(x.get("error") or "").startswith("unconfirmed")]
-        nu += len(unc)
+        over = [x for x in rows if x.get("error") == sim.OVER] if not r.get("skipped") else []
+        nu += len(unc) + len(over)
+        if r.get("skipped"):
+            ns += 1
+        if over:
+            store.event(rid, "muse", f"{pr['plan']['cell']} ({pr['plan']['kind']}): {len(over)}/{len(rows)} conditions "
+                                     f"not run: the review's time budget was spent. They count as not tested.", "warn")
         if unc:
             store.event(rid, "muse", f"{pr['plan']['cell']} ({pr['plan']['kind']}): {len(unc)}/{len(rows)} conditions "
                                      f"not checked against a finer time step: {unc[0]['error'].split(', so')[0][13:]}. "
@@ -220,14 +235,15 @@ def keep_plans(rid, lv, res, by):
                                         location=f"{pr['plan']['cell']} · " + ("test planned by Muse Spark" if by == "muse"
                                                                                else "baseline power-up (no model)"),
                                         device=f.get("device", ""), detail=dict(f, plan=pr["plan"], planner=by, k=k)))
-    lv.set(plan_results=kept, unconfirmed=lv.d.get("unconfirmed", 0) + nu)
+    lv.set(plan_results=kept, unconfirmed=lv.d.get("unconfirmed", 0) + nu, not_run=lv.d.get("not_run", 0) + ns)
     return nf
 
 
 def unc_note(lv):
     """The coverage gap of the planned tests, for the stage line: conditions whose fine-step check could not run."""
-    n = lv.d.get("unconfirmed") or 0
-    return f" · {n} condition(s) not confirmed (not tested)" if n else ""
+    n, k = lv.d.get("unconfirmed") or 0, lv.d.get("not_run") or 0
+    return ((f" · {n} condition(s) not confirmed (not tested)" if n else "") +
+            (f" · {k} test(s) not run (time budget)" if k else ""))
 
 
 NO_3V3 = "the chip has no 3.3 V supply"

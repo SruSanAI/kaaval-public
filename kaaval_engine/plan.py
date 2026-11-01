@@ -462,7 +462,7 @@ def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):
     {key: {temp: (result, err)}}."""
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=sim.WORKERS) as ex:     # each run is its own ngspice process
-        futs = {key: ex.submit(sim.startup_corner, tb, c, temps, v, ramp, settle, timeout, sched)
+        futs = {key: sim.spawn(ex, sim.startup_corner, tb, c, temps, v, ramp, settle, timeout, sched)
                 for key, c, v, sched in groups}
         coarse = {key: f.result() for key, f in futs.items()}
     sus, rest = sim.budget(sim.SUSPECT_BUDGET), sim.budget()
@@ -470,7 +470,7 @@ def _checked_sweep(tb, groups, temps, ramp, settle, timeout, suspect):
     out = {}
     for phase, fine in ((True, sus), (False, rest)):            # every suspect is checked before any other group
         with ThreadPoolExecutor(max_workers=sim.WORKERS) as ex:
-            futs = {key: ex.submit(sim.startup_checked, tb, c, temps, v, ramp=ramp, settle=settle, timeout=timeout,
+            futs = {key: sim.spawn(ex, sim.startup_checked, tb, c, temps, v, ramp=ramp, settle=settle, timeout=timeout,
                                    schedule=sched, fine=fine, coarse=coarse[key])
                     for key, c, v, sched in groups if flag[key] == phase}
             out.update({key: f.result() for key, f in futs.items()})

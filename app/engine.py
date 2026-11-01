@@ -119,9 +119,10 @@ def cells(ws, scope=""):
     return _post("cells", {"ws": ws, "scope": scope})["cells"]
 
 
-def plan(ws, p):
-    """Run one test plan; a refused plan comes back as {ok: False, errors: [...]} for the planner to correct."""
-    return _post("plan", {"ws": ws, "plan": p})
+def plan(ws, p, budget=None):
+    """Run one test plan; a refused plan comes back as {ok: False, errors: [...]} for the planner to correct. `budget`:
+    seconds its simulations may take; conditions not reached in time come back as not run (errors, never findings)."""
+    return _post("plan", dict({"ws": ws, "plan": p}, **({"budget": budget} if budget else {})))
 
 
 def health():

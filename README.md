@@ -45,6 +45,10 @@ not foundry sign-off**; one measured run is not a guarantee.
    state reached depends on numerical detail, so on silicon it depends on noise and ramp) instead of a pass or a fail.
    Each test has 300 s for the fine-step runs; on a cell too large for that (a whole SAR ADC with its DAC) the
    remaining conditions are **unconfirmed**: shown as not tested, counted on the review, never a pass or a finding.
+   A whole review is bounded too: the planned tests share 600 s of simulation (a power-up gets twice the share of
+   other tests; time one test does not use passes to the next), and a condition not reached in its share is listed
+   as **not run**. On a 161-device flash ADC the full review takes 610 s instead of 1,968 s with the same findings,
+   and 72 of its 165 power-up conditions are then not tested (`KAAVAL_PLAN_BUDGET` raises the budget; 0 removes it).
 4. **Fix.** A proposal, never a merge: a sizing fix is re-simulated at all 45 conditions before it is shown.
 
 The review page shows the evidence behind each finding: the failing device on its own schematic sheet, the
@@ -187,6 +191,7 @@ public issue) · [Code of Conduct](CODE_OF_CONDUCT.md)
 - Open PDKs only (sky130 today); foundry PDKs and commercial simulators are not supported.
 - Schematic-level: layout parasitics are seen only when an extracted netlist is in the repository.
 - Repositories with only images or PDFs of their schematics cannot be simulated; Kaaval says so.
+- A review stops at its time budget: on a large chip some conditions, or whole tests, are reported as not run.
 - Timing constraints are measured without noise (no jitter), and offsets only as the PDK's mismatch models give them.
 
 ---

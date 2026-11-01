@@ -9,7 +9,7 @@ that reports every transistor's operating point (BSIM4 `show`), so the same deck
     tb = sim.Testbench.from_sch("xschem/tb_x.sch")
     ops = sim.op_points(tb, corner="ss", temp=-40, vscale=0.9)
 """
-import os, re, shutil, subprocess, tempfile, threading, time
+import contextlib, contextvars, os, re, shutil, subprocess, tempfile, threading, time
 from dataclasses import dataclass, field
 
 from kaaval_engine import netlist as N
@@ -166,7 +166,40 @@ def deck(tb, corner="tt", temp=27, vscale=1.0, control=None):
             f"\n.control\n{ctl}\n.endc\n.end\n")
 
 
+# a review's wall-time budget: the moment its simulations must stop (time.time()), or None. A context variable, so
+# every test plan run by one request carries its own; thread pools pass it on through spawn() below.
+_DEADLINE = contextvars.ContextVar("kaaval_deadline", default=None)
+OVER = "not run: the review's time budget was spent"
+
+
+@contextlib.contextmanager
+def until(seconds):
+    """Every simulation started inside this block ends within `seconds` of its start (None: no limit). A run cut short
+    reports "timeout"; one not started reports OVER. Both are conditions not tested, never findings."""
+    tok = _DEADLINE.set(None if seconds is None else time.time() + float(seconds))
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(tok)
+
+
+def time_left():
+    """Seconds left in the current budget (None: no budget)."""
+    d = _DEADLINE.get()
+    return None if d is None else d - time.time()
+
+
+def spawn(ex, fn, *a, **kw):
+    """ex.submit(fn, ...) that keeps the caller's budget: a pool thread does not inherit context variables."""
+    return ex.submit(contextvars.copy_context().run, fn, *a, **kw)
+
+
 def run(deck_text, timeout=120):
+    left = time_left()
+    if left is not None:
+        if left < 1:
+            return "", OVER
+        timeout = min(timeout, left)
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "deck.sp")
         open(p, "w").write(deck_text)
@@ -609,6 +642,7 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
             else:
                 nxt.append(t)
         todo = nxt
+    spent = time_left() is not None and time_left() < 1        # the review's budget ran out, not this cell's
     for t in temps:
         if t in final:
             continue
@@ -620,12 +654,14 @@ def startup_checked(tb, corner, temps, vscale=1.0, ramp=20e-6, settle=30e-6, tim
         # the condition is unconfirmed, not marginal
         fine_done = [r for r, e, tm in seen[t] if not e and r and tm is not None]
         if not done:
-            final[t] = (None, seen[t][-1][1] if seen[t] else "did not complete")
+            e = seen[t][-1][1] if seen[t] else "did not complete"
+            final[t] = (None, OVER if spent and e in ("timeout", OVER) else e)
         elif len(fine_done) >= 2 and any(not _same(a, b) for a, b in zip(fine_done, fine_done[1:])):
             final[t] = (None, f"undetermined: the power-up result changes with the simulator's time step ({vals})")
         else:
             bad = [(e, tm) for r, e, tm in seen[t] if e and tm is not None and e != "timeout"]
-            why = (f"the {fine['timed_out']} run timed out" if fine["timed_out"] else
+            why = ("the review's time budget was spent" if spent else
+                   f"the {fine['timed_out']} run timed out" if fine["timed_out"] else
                    f"the {fmt_step(bad[-1][1])} run failed ({bad[-1][0]})" if bad else "the fine-step time budget was spent")
             final[t] = (None, f"unconfirmed: {why}, so the result was not checked against a finer step ({vals})")
     for r, _ in final.values():                    # (the default run's waveform served the windowed check only)

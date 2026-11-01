@@ -66,7 +66,7 @@ def test_runner_compares_only_tests_that_drive_every_input():
     saved = (runner.extract.cell, runner.engine.upload, runner.engine.plan, runner.store.event, runner.store.add_finding)
     runner.extract.cell = lambda root, cell, mag, parasitics=False: ("* post\n", None)
     runner.engine.upload = lambda files: "ws2"
-    runner.engine.plan = lambda ws, ep: ran.append(ep["cell"]) or dict(ok=True, results=[row(i_end=1e-10)])
+    runner.engine.plan = lambda ws, ep, **kw: ran.append(ep["cell"]) or dict(ok=True, results=[row(i_end=1e-10)])
     runner.store.event = lambda rid, st, msg, lvl="info": events.append(msg)
     runner.store.add_finding = lambda rid, f: finds.append(f)
     try:

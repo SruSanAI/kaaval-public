@@ -26,6 +26,35 @@ ARMS = {
 }
 CORNERS = ["tt", "ss", "ff", "sf", "fs"]
 MAX_PLANS = 4
+# wall-time budget (seconds) for all of one review's planned tests; 0 = none. Shared out as the tests run (a power-up
+# counts double), so one large cell cannot take the whole review: what a test does not reach in its share is
+# reported as not run, never as a pass or a finding (backtest v2, 1 Nov: one 1366-device design ran 20 h unbounded)
+PLAN_BUDGET = float(os.environ.get("KAAVAL_PLAN_BUDGET", "600") or 0)
+WEIGHT = {"powerup": 2.0}
+SKIPPED = "not run: the review's time budget was spent before this test started"
+
+
+class Clock:
+    """The review's budget for planned tests: share(plan, rest) is this plan's seconds, given the plans still waiting
+    after it; time a test does not use passes to the next. None without a budget."""
+
+    def __init__(self, seconds=None):
+        seconds = PLAN_BUDGET if seconds is None else seconds
+        self.end = time.time() + seconds if seconds else None
+
+    def share(self, plan, rest=()):
+        if self.end is None:
+            return None
+        w = WEIGHT.get(plan["kind"], 1.0)
+        return max(0.0, self.end - time.time()) * w / (w + sum(WEIGHT.get(q["kind"], 1.0) for q in rest))
+
+
+def run_plan(ws, ep, clock, rest=()):
+    """engine.plan within the plan's share of the budget; a plan whose share is gone is not started."""
+    secs = clock.share(ep, rest)
+    if secs is not None and secs < 5:
+        return dict(ok=False, skipped=True, errors=[SKIPPED])
+    return engine.plan(ws, ep, budget=secs)
 
 SYSTEM = """You are a senior analog IC design reviewer. A designer has published an open-silicon chip design (SkyWater
 sky130, xschem schematics). Their own testbenches only cover what they thought of. Find the blocks that could fail in
@@ -228,11 +257,16 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
     for b in out["blocks"]:
         log("block", f"{b['cell']}: {b['function']} — {b['evidence']}", risks=b["risks"], startup=b["startup_path"])
     done = []
-    for p in out["plans"][:MAX_PLANS]:
+    chosen = out["plans"][:MAX_PLANS]
+    clock = Clock()
+    rest = lambda i: [dict(kind=q["kind"]) for q in chosen[i + 1:]]
+    for i, p in enumerate(chosen):
         ep = _to_engine(p)
         log("plan", f"Test planned on {p['cell']}: {p['why']}", plan=ep)
-        r = engine.plan(ws, ep)
-        if not r.get("ok") and r.get("errors"):
+        r = run_plan(ws, ep, clock, rest(i))
+        if r.get("skipped"):
+            log("plan", f"Not run: the review's time budget ({PLAN_BUDGET:.0f} s for planned tests) was spent")
+        elif not r.get("ok") and r.get("errors"):
             # one correction round: the engine's reasons go back to the model
             log("plan", "The engine refused the plan: " + "; ".join(r["errors"]))
             fix_msgs = msgs + [{"role": "assistant", "content": json.dumps(out)},
@@ -244,7 +278,7 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
             cand = [q for q in out2["plans"] if q["cell"] == p["cell"]]
             if cand:
                 ep = _to_engine(cand[0])
-                r = engine.plan(ws, ep)
+                r = run_plan(ws, ep, clock, rest(i))
         done.append(dict(plan=ep, result=r))
         for f in r.get("findings") or []:
             log("finding", f["message"], rule=f["rule"], cell=ep["cell"])
@@ -326,7 +360,7 @@ def _rules(ws, log, max_cells=20, docs=""):
     3.3 V for pins named like the analog 3.3 V rail, 1.8 V otherwise. Cells with two supply voltages or pins named
     like an enable / reset also get a sequence test (rail order and speed); cells with supplies at two voltages also
     get the cross-domain overstress test."""
-    done = []
+    done, todo = [], []
     # one test per circuit: the same cell often exists as a schematic plus xschem-written and layout-extracted
     # netlists; prefer the schematic, then a plain netlist, then an extracted one (parasitic copies last)
     def name(c):
@@ -380,11 +414,18 @@ def _rules(ws, log, max_cells=20, docs=""):
                               pads=[{"port": p} for p in outs[:2]], corners=CORNERS, temps=[-40, 27, 125],
                               vscales=[1.0], why="outputs by pin names, each on a Tiny Tapeout pad; rail voltages "
                                                  "guessed: " + guess))
-        for ep in plans:
-            log("plan", f"rules: {ep['kind']} {c['cell']}", plan=ep)
-            try:
-                r = engine.plan(ws, ep)
-            except engine.EngineError as e:               # one slow or broken cell never ends the review
-                r = dict(ok=False, errors=[str(e)])
-            done.append(dict(plan=ep, result=r))
+        todo += plans
+    # every cell's power-up first (the test that finds a dead or two-state block), then the other kinds
+    todo.sort(key=lambda ep: ep["kind"] != "powerup")
+    clock = Clock()
+    for i, ep in enumerate(todo):
+        log("plan", f"rules: {ep['kind']} {ep['cell']}", plan=ep)
+        try:
+            r = run_plan(ws, ep, clock, todo[i + 1:])
+        except engine.EngineError as e:                   # one slow or broken cell never ends the review
+            r = dict(ok=False, errors=[str(e)])
+        if r.get("skipped"):
+            log("plan", f"rules: {ep['kind']} {ep['cell']} not run: the review's time budget "
+                        f"({PLAN_BUDGET:.0f} s for planned tests) was spent")
+        done.append(dict(plan=ep, result=r))
     return dict(arm="rules", blocks=[], plans=done, usage=[])

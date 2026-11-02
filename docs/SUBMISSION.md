@@ -68,7 +68,7 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   warnings. Checked against silicon outcomes first: in backtest v2 that moves 24 warnings on chips that work and
   none of the failures' own findings. An oscillation found with undriven inputs is re-run at its worst condition
   with them held at 0 V, mid-supply and full supply: settled at every level, it is a note; still swinging, a
-  warning naming the level. On 10 backtest rows, 10 of 11 such oscillations became notes and chips that work with a
+  warning naming the level. On 10 backtest rows (development set), 10 of 11 such oscillations became notes and chips that work with a
   design-risk finding fell from 9 of 21 to 6 of 21; the in-scope op-amp failure keeps its warning.
 - The no-model baseline chooses among the cells it can test before taking the largest: on the 28 backtest rows,
   cells powered up go from 59 to 74; an op-amp chip whose layout netlist's standard cells had taken every slot goes
@@ -79,15 +79,20 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   margin 1–34° at 45 of 45 conditions in its follower testbenches (2 of its testbenches); no finding on a chip that
   works; the 3-stage op-amp whose phase margin was low on silicon (blamed on the pad path and board) measures
   60–67° with a Tiny Tapeout pad, so it is not caught.
-- Silicon backtest (no-model baseline, v5, 2 Nov, every review exactly as the server runs it; counts only, as
-  `tools/score_backtest.py` prints them): of 52 Tiny Tapeout analog chips with silicon feedback, 28 cloned rows
+- Silicon backtest, a **development set** (no-model baseline, v5, 2 Nov, every review exactly as the server runs
+  it; counts only, as `tools/score_backtest.py` prints them). The rule changes of 1-2 Nov were each prompted by a
+  chip in this same set (the 555 timer's loop, an analog switch's floating pins, a top cell's unwired pins), so the
+  improvement from v2 to v5 is partly fitted to these chips and says less about chips Kaaval has not seen; each
+  change was also checked for side effects on the 98 cloned repositories where that could be counted. Result: of 52 Tiny Tapeout analog chips with silicon feedback, 28 cloned rows
   reviewed in 2.8 h. Of the 7 that failed in a way Kaaval checks, 3 are flagged by the rule of their failure:
   the op-amp with stability trouble (phase margin 1-34° in its own follower testbench), the bandgap with a second
   operating point (two states), the relaxation oscillator with a low analog output (weak output under the pad
   load). Missed: a supply-domain error, a board-load workaround, a 3-stage op-amp's phase margin (60-67° even with
   a pad), and a design whose layout has sub-cells missing from its repository. Chips that work with at least one
   design-risk finding: 7 of 21 (v3: 9 of 21; v2: 11 of 16), each one to be read before it is called a false
-  alarm. Scope labels are the Kaaval author's reading of each outcome, not the designers'; with 7 in scope, one
+  alarm. Split by whether a chip prompted a change: on the 13 rows whose review led to no rule or code
+  change (no clean held-out set exists yet: TT09's chip pages carry no silicon feedback), 2 of 4 in-scope failures
+  are flagged by their rule and 2 of 15 working chips have a design-risk finding. Scope labels are the Kaaval author's reading of each outcome, not the designers'; with 7 in scope, one
   chip moves a rate by 14 points, so no percentage is given.
 - **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
 

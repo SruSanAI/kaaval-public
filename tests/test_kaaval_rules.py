@@ -122,6 +122,23 @@ def test_foundry_cells_do_not_take_the_slots_of_the_designs_own():
     assert set(planned) == {"xschem/amp.sch"}, planned
 
 
+
+def test_unwired_pins_are_dropped_and_the_test_runs():
+    """Backtest row 22: the top cell lists ua[1] and ena, wires neither, and its drive and sequence tests were refused
+    and never ran. They run again without those pins; anything else refused is left refused."""
+    from app import planner as PL
+    ep = dict(cell="t.sch", kind="drive", supplies={"VPWR": 1.8}, grounds=["VGND"], pads=[{"port": "ua[0]"}, {"port": "ua[1]"}])
+    p, bad = PL.unwired(ep, dict(ok=False, errors=["pad port 'ua[1]' is not a net of t.sch"]))
+    assert p["pads"] == [{"port": "ua[0]"}] and bad == ["ua[1]"]
+    assert PL.unwired(ep, dict(ok=False, errors=["pad port 'ua[1]' is not a net of t.sch",
+                                                 "pad port 'ua[0]' is not a net of t.sch"])) is None
+    assert PL.unwired(ep, dict(ok=False, errors=["supply port 'VPWR' is not a net of t.sch"])) is None
+    sq = dict(cell="t.sch", kind="sequence", supplies={"VPWR": 1.8, "VAPWR": 3.3}, grounds=["VGND"],
+              controls=[{"port": "ena", "volts": 1.8}])
+    p, _ = PL.unwired(sq, dict(ok=False, errors=["control port 'ena' is not a net of t.sch"]))
+    assert "controls" not in p and p["supplies"] == sq["supplies"]
+    assert PL.unwired(dict(sq, supplies={"VPWR": 1.8}), dict(ok=False, errors=["control port 'ena' is not a net of t.sch"])) is None
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

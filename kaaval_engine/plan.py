@@ -445,10 +445,74 @@ def undriven(plan, root):
     used |= {x.get("port") for k in ("biases", "controls", "loads", "pads") for x in plan.get(k) or []}
     used = {str(u).lower() for u in used if u}
     circ = _cell_circuit(plan, root) or ""
-    return [q for q in ports if q.lower() not in used and not dc_path(circ, q)]
+    reach = dc_groups(circ)
+    driven = {reach(u) for u in used} | {reach(g) for g in ("0", "gnd")}
+    return [q for q in ports if q.lower() not in used and reach(q) not in driven]
+
+
+def dc_groups(circuit):
+    """A function net -> its DC group in `circuit`: nets joined by anything that carries DC (a resistor, a source, a
+    diode, a transistor's channel, recursively inside the design's subcircuits; a device the netlist does not define
+    joins all its pins). A pin whose group holds no net the test drives floats, even when it has a DC path: the two
+    terminals of a pass gate reach only each other (backtest row 12: an analog switch's IN and OUT, left undriven,
+    drifted 70 mV and read as an oscillation)."""
+    subs, top, cur = {}, [], None
+    for line in re.sub(r"\n\s*\+", " ", circuit).splitlines():
+        t = re.sub(r"'[^']*'|\{[^}]*\}", "", line).split()
+        if not t or t[0].startswith("*"):
+            continue
+        if t[0].lower() == ".subckt":
+            cur = t[1].lower()
+            subs[cur] = ([x.lower() for x in t[2:] if "=" not in x], [])
+            continue
+        if t[0].lower().startswith(".ends"):
+            cur = None
+            continue
+        if not t[0].startswith("."):
+            (subs[cur][1] if cur else top).append([x.lower() for x in t if "=" not in x])
+    parent = {}
+
+    def find(a):
+        parent.setdefault(a, a)
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def join(a, b):
+        parent[find(a)] = find(b)
+
+    def walk(lines, net, path, depth):
+        for t in lines:
+            k = t[0][0]
+            if k == "c" or len(t) < 3:
+                continue
+            if k == "m" and len(t) >= 4:
+                join(net(t[1]), net(t[3]))                      # drain - source: the channel (gate, body: no DC)
+                continue
+            if k == "x":
+                pins, name = t[1:-1], t[-1]
+                if MOS.match(name) and len(pins) >= 3:
+                    join(net(pins[0]), net(pins[2]))
+                elif RES.match(name) and len(pins) >= 2:
+                    join(net(pins[0]), net(pins[1]))            # a poly resistor's third pin is its body: no DC
+                elif name in subs and depth < 30:
+                    inner, body = subs[name]
+                    mp = dict(zip(inner, (net(p) for p in pins)))
+                    pre = f"{path}{t[0]}/"
+                    walk(body, lambda n, mp=mp, pre=pre: mp.get(n) or (n if n in ("0", "gnd") else pre + n), pre,
+                         depth + 1)
+                else:
+                    for p in pins[1:]:                          # not defined here: assume it conducts
+                        join(net(pins[0]), net(p))
+                continue
+            join(net(t[1]), net(t[2]))                          # R, L, D, V, I, E, ...
+    walk(top, lambda n: n, "", 0)
+    return lambda n: find(str(n).lower())
 
 
 MOS = re.compile(r"(?i)^sky130_fd_pr__(n|p)fet\w*$|^gf180mcu_fd_pr__(n|p)fet\w*$")
+RES = re.compile(r"(?i)^(sky130|gf180mcu)_fd_pr__res\w*$")
 
 
 def dc_path(circuit, net):

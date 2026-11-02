@@ -34,7 +34,12 @@ not foundry sign-off**; one measured run is not a guarantee.
 ## How a review works
 
 1. **Read.** Schematics (xschem) and SPICE netlists are parsed as text and netlisted the way xschem would
-   (95.3 % of 8,394 devices identical on 434 xschem-written netlists). Nothing in the repository is ever executed.
+   (`kaaval_engine/check_netlister.py`, against the netlists xschem itself wrote and committed in 98 repositories:
+   95.5 % of 8,394 PDK devices identical, name, model and nets in pin order, on 434 netlists; over every element
+   drawn from a schematic, instances, sources, R and C included, 93.7 % of 20,211 are connected identically when
+   net names are mapped one to one, 79.6 % when names must also agree, as a wire with two labels can take either
+   name. Committed netlists can be older than their schematic, so these are lower bounds). Nothing in the
+   repository is ever executed.
 2. **Plan (Muse Spark).** Muse Spark reads the docs and every circuit cell, names each block and its risks, labels
    the job of every pin with its evidence, and writes test plans as JSON (a strict schema). Plans are data: the engine checks every cell, port and value before anything
    runs, and refuses raw SPICE. Without a Muse Spark key, a labelled no-model baseline powers up every circuit.

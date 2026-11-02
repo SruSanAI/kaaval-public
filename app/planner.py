@@ -355,6 +355,26 @@ def used_inside(cells, name):
     return out
 
 
+UNWIRED = re.compile(r"^(control|pad) port '([^']+)' is not a net of ")
+
+
+def unwired(ep, r):
+    """(plan, dropped ports) when the engine refused the baseline's plan only because control or pad pins it chose
+    are wired to nothing inside the cell (a Tiny Tapeout top cell lists every ua[] pin and ena); None when anything
+    else was refused or nothing would be left to test."""
+    errs = r.get("errors") or []
+    if r.get("ok") is not False or not errs or not all(UNWIRED.match(e) for e in errs):
+        return None
+    bad = {UNWIRED.match(e).group(2) for e in errs}
+    p = dict(ep, controls=[c for c in ep.get("controls") or [] if c["port"] not in bad],
+             pads=[x for x in ep.get("pads") or [] if x["port"] not in bad])
+    if ep["kind"] == "drive" and not p["pads"]:
+        return None
+    if ep["kind"] == "sequence" and not p["controls"] and len(ep.get("supplies") or {}) < 2:
+        return None
+    return {k: v for k, v in p.items() if v or k not in ("controls", "pads")}, sorted(bad)
+
+
 def _rules(ws, log, max_cells=20, docs=""):
     """The no-model baseline: every cell whose pins name a supply and a ground is powered up at all 45 conditions.
     3.3 V for pins named like the analog 3.3 V rail, 1.8 V otherwise. Cells with two supply voltages or pins named
@@ -434,6 +454,11 @@ def _rules(ws, log, max_cells=20, docs=""):
         log("plan", f"rules: {ep['kind']} {ep['cell']}", plan=ep)
         try:
             r = run_plan(ws, ep, clock, todo[i + 1:])
+            fixed = unwired(ep, r)
+            if fixed:                     # a pin the cell lists but never wires: tested without it (backtest row 22)
+                log("plan", f"rules: {ep['kind']} {ep['cell']} again without {', '.join(fixed[1])}: listed as "
+                            f"pins but wired to nothing in the cell", plan=fixed[0])
+                ep, r = fixed[0], run_plan(ws, fixed[0], clock, todo[i + 1:])
         except engine.EngineError as e:                   # one slow or broken cell never ends the review
             r = dict(ok=False, errors=[str(e)])
         if r.get("skipped"):

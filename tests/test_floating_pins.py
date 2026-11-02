@@ -54,6 +54,26 @@ def test_marginal_startup_with_undriven_inputs_is_a_note():
     assert g["severity"] == "warn" and "undriven" not in g["message"]
 
 
+def test_pins_that_reach_only_each_other_are_undriven():
+    """A pass gate's two terminals have a DC path, but only to each other: with nothing the test drives in their
+    group, both float (backtest row 12's analog switch)."""
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "c.spice"), "w").write(
+        ".subckt pg z a gp gn vss vcc\nXM1 z gn a vss sky130_fd_pr__nfet_01v8 L=0.2 W=2\n"
+        "XM2 z gp a vcc sky130_fd_pr__pfet_01v8 L=0.2 W=2\n.ends\n"
+        ".subckt sw out in en vss vcc mon\nx2 out in enb en vss vcc pg\nXM3 enb en vcc vcc sky130_fd_pr__pfet_01v8 L=0.2 W=1\n"
+        "XM4 enb en vss vss sky130_fd_pr__nfet_01v8 L=0.2 W=1\nR1 mon vss 1k\n.ends\n")
+    plan = dict(cell="c.spice#sw", kind="powerup", supplies={"vcc": 1.8}, grounds=["vss"],
+                controls=[{"port": "en", "volts": 1.8}])
+    assert P.undriven(plan, d) == ["out", "in"]          # mon reaches ground through R1: driven
+    plan["biases"] = [{"port": "in", "volts": 0.9}]
+    assert P.undriven(plan, d) == []                      # in is held, and out reaches it through the switch
+    # a poly resistor's body pin carries no DC: a pin behind one to the substrate only still floats
+    open(os.path.join(d, "r.spice"), "w").write(".subckt rr vdd vss a b\nXR1 a b vss sky130_fd_pr__res_xhigh_po_5p73 L=8\n"
+                                                "R2 vdd vss 1k\n.ends\n")
+    assert P.undriven(dict(cell="r.spice#rr", kind="powerup", supplies={"vdd": 1.8}, grounds=["vss"]), d) == ["a", "b"]
+
+
 def _held(swings):
     """held_inputs on a stub simulator: `swings` {held volts: swing dict or None}. Returns (findings, benches seen)."""
     d = tempfile.mkdtemp()

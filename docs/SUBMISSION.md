@@ -34,7 +34,12 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   - an SDC clock from a ring oscillator, 1.133–3.573 ns over the 45 conditions;
   - the LDO's load-step droop puts setup on `ss_n40C_1v35`, not `1v44`;
   - a StrongARM latch decides wrong in 30 of 40 mismatch samples at ±1 mV, so its `.lib` is refused there.
-- Netlister: 95.3 % of 8,394 devices identical to xschem's own output, on 434 netlists.
+- Netlister, against netlists xschem itself wrote and committed: 95.5 % of 8,394 PDK devices identical (name,
+  model, nets in pin order) on 434 netlists. Over every element drawn from a schematic (instances, sources, R, C):
+  93.7 % of 20,211 connected identically with net names mapped one to one, 79.6 % with names literal (a wire with two
+  labels can take either name). A plain line-by-line count, which also counts the netlists' simulator commands and
+  library cells no schematic describes, gives about 61 %; the largest differences left are committed netlists from
+  an older version of their schematic (one testbench on three shuttles).
 - Symbols named by a bare name or by another machine's PDK path now resolve as xschem finds them: unresolved
   component references in the 98 cloned repositories fall from 4,603 to 98. The same holds for finding a
   schematic's ports and its testbenches: 139 schematics in 21 repositories get their ports, 86 testbenches in 10

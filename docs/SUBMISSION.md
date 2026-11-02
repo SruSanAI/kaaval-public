@@ -74,7 +74,16 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   margin 1–34° at 45 of 45 conditions in its follower testbenches (2 of its testbenches); no finding on a chip that
   works; the 3-stage op-amp whose phase margin was low on silicon (blamed on the pad path and board) measures
   60–67° with a Tiny Tapeout pad, so it is not caught.
-- **FILL** silicon backtest: counts only, as `tools/score_backtest.py` prints them (rows, findings, unconfirmed, rails).
+- Silicon backtest (no-model baseline, v5, 2 Nov, every review exactly as the server runs it; counts only, as
+  `tools/score_backtest.py` prints them): of 52 Tiny Tapeout analog chips with silicon feedback, 28 cloned rows
+  reviewed in 2.8 h. Of the 7 that failed in a way Kaaval checks, 3 are flagged by the rule of their failure:
+  the op-amp with stability trouble (phase margin 1-34° in its own follower testbench), the bandgap with a second
+  operating point (two states), the relaxation oscillator with a low analog output (weak output under the pad
+  load). Missed: a supply-domain error, a board-load workaround, a 3-stage op-amp's phase margin (60-67° even with
+  a pad), and a design whose layout has sub-cells missing from its repository. Chips that work with at least one
+  design-risk finding: 7 of 21 (v3: 9 of 21; v2: 11 of 16), each one to be read before it is called a false
+  alarm. Scope labels are the Kaaval author's reading of each outcome, not the designers'; with 7 in scope, one
+  chip moves a rate by 14 points, so no percentage is given.
 - **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
 
 ## Built during the event (startup-track label)

@@ -79,6 +79,10 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   margin 1–34° at 45 of 45 conditions in its follower testbenches (2 of its testbenches); no finding on a chip that
   works; the 3-stage op-amp whose phase margin was low on silicon (blamed on the pad path and board) measures
   60–67° with a Tiny Tapeout pad, so it is not caught.
+  Across all 98 cloned repositories (counts only): 509 testbenches, 57 of them in 20 repositories close a loop around
+  an instance (77 loops); 13 loops are judged as amplifiers in negative feedback (the rest are open-loop AC benches,
+  switches or loops with no gain), and 5 are flagged, all one op-amp design used in two projects: the one that
+  oscillated on silicon, and a twin-tee oscillator built from it.
 - Silicon backtest, a **development set** (no-model baseline, v5, 2 Nov, every review exactly as the server runs
   it; counts only, as `tools/score_backtest.py` prints them). The rule changes of 1-2 Nov were each prompted by a
   chip in this same set (the 555 timer's loop, an analog switch's floating pins, a top cell's unwired pins), so the

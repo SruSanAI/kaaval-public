@@ -229,6 +229,13 @@ public issue) · [Code of Conduct](CODE_OF_CONDUCT.md)
 - Repositories with only images or PDFs of their schematics cannot be simulated; Kaaval says so.
 - A review stops at its time budget: on a large chip some conditions, or whole tests, are reported as not run.
 - Timing constraints are measured without noise (no jitter), and offsets only as the PDK's mismatch models give them.
+- Without the planner, stability is measured only for loops the designer's own testbenches close (an instance whose
+  output returns to its own input), and only where that loop is an amplifier in negative feedback; the board and
+  probe beyond the Tiny Tapeout pad are not modelled (a 3-stage op-amp whose margin was low on silicon, blamed on
+  the board, measures 60-67° with the pad).
+- The no-model baseline leaves a cell's inputs undriven where nothing names their bias: findings that an undriven
+  input alone could explain are notes, and an oscillation is re-run with those inputs held before it is a warning.
+- The silicon backtest's 28 chips are a development set: the rules of 1-3 Nov were changed with them in view.
 
 ---
 by Sanjay Sivakumar · [github.com/SruSanCyborg](https://github.com/SruSanCyborg)

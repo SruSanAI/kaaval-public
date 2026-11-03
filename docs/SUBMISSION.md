@@ -100,6 +100,11 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   chip moves a rate by 14 points, so no percentage is given.
 - **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
 
+- In a project's own CI: `tools/kaaval_check.py` runs the same review on a checkout (findings, JSON, SARIF, exit
+  code 1 on a design-risk warning) and `action.yml` makes it a GitHub Action whose findings show on the pull
+  request's files. On backtest row 8: 3 warnings, each SARIF result on its schematic, exit 1. (The Action itself
+  waits for CI minutes to run.)
+
 ## Built during the event (startup-track label)
 
 All of `SruSanAI/kaaval`, starting 27 Oct: the netlister, the engine, the planner, the review UI, chip view,

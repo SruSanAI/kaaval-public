@@ -172,6 +172,25 @@ Needs only open tools: [ngspice](https://ngspice.sourceforge.io/) and the open s
     volare enable --pdk sky130 c6d73a35f524070e85faff4a6a9eef49553ebc2b
     KAAVAL_PORT=5110 python -m app.server                  # http://127.0.0.1:5110
 
+From the command line, on a local checkout (the same review, printed; exit code 1 on a design-risk warning):
+
+    python tools/kaaval_check.py path/to/your-tt-project --sarif kaaval.sarif --json kaaval.json
+
+In your own repository's CI, as a GitHub Action: every push and pull request is reviewed, and the findings appear on
+the pull request's files (SARIF, code scanning).
+
+```yaml
+on: [push, pull_request]
+permissions: {contents: read, security-events: write}
+jobs:
+  kaaval:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: SruSanAI/kaaval-public@main     # the public mirror of this repository
+        with: {fail-on: risk}          # or none: report only
+```
+
 Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval . && docker run -p 7860:7860 kaaval`
 (see [docs/HOSTING.md](docs/HOSTING.md)).
 
@@ -185,7 +204,7 @@ Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval
 
 Tests (they simulate): `python tests/test_local_engine.py`, `tests/test_kaaval_startup.py`,
 `tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_liberty.py`, `tests/test_kaaval_chip.py`, `tests/test_kaaval_stdcells.py`,
-`tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`.
+`tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`, `tests/test_testbench_loops.py`, `tests/test_kaaval_check.py`.
 
 ## What runs where
 

@@ -625,8 +625,8 @@ def review(rid, src, root=None):
                 lv.stage("muse", "done", f"no model · {len(res['plans'])} cell(s) powered up · {nf} finding(s)" + unc_note(lv))
                 store.event(rid, "muse", f"Muse Spark is not connected on this server. As a baseline, every cell with "
                                          f"named supply and ground pins was powered up at 30 conditions "
-                                         f"({len(res['plans'])} cell(s), {nf} finding(s)); loop stability needs the "
-                                         f"planner to choose where to cut.", "warn")
+                                         f"({len(res['plans'])} cell(s), {nf} finding(s)); the loops its testbenches close were "
+                                         f"measured; any other loop needs the planner to choose where to cut.", "warn")
             except (planner.PlannerError, engine.EngineError) as e:
                 lv.stage("muse", "skipped", "not connected")
                 store.event(rid, "muse", f"Muse Spark is not connected; the baseline power-up did not run: {e}", "warn")

@@ -176,6 +176,23 @@ From the command line, on a local checkout (the same review, printed; exit code 
 
     python tools/kaaval_check.py path/to/your-tt-project --sarif kaaval.sarif --json kaaval.json
 
+From an AI assistant, as an MCP server (Model Context Protocol, stdio; no extra dependency): the assistant can review
+a design, read the proven findings, open one with its failing conditions and evidence, or measure one testbench's
+loops in seconds. Reviews land in the same database as the web app, so each opens on the bench too.
+
+```json
+{"mcpServers": {"kaaval": {"command": "python", "args": ["-m", "app.mcp_server"], "cwd": "/path/to/kaaval",
+                           "env": {"KAAVAL_URL": "http://127.0.0.1:5110"}}}}
+```
+
+| Tool | What it returns |
+|---|---|
+| `kaaval_review` | a local folder or a repository link reviewed in full: run id, bench link, every finding |
+| `kaaval_findings` | a review's findings, by kind (risk / note / trap) or rule |
+| `kaaval_finding` | one finding: worst condition, failing conditions, measured detail, bench, walk-through and evidence links |
+| `kaaval_loops` | the loops one testbench closes, phase margin at 45 conditions and a verdict |
+| `kaaval_layout` | layout against schematic for every cell drawn both ways, each mismatch explained |
+
 In your own repository's CI, as a GitHub Action: every push and pull request is reviewed, and the findings appear on
 the pull request's files (SARIF, code scanning).
 
@@ -204,7 +221,7 @@ Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval
 
 Tests (they simulate): `python tests/test_local_engine.py`, `tests/test_kaaval_startup.py`,
 `tests/test_kaaval_stability.py`, `tests/test_kaaval_sequence.py`, `tests/test_kaaval_logic.py`, `tests/test_kaaval_domains.py`, `tests/test_kaaval_drive.py`, `tests/test_kaaval_twin.py`, `tests/test_kaaval_liberty.py`, `tests/test_kaaval_chip.py`, `tests/test_kaaval_stdcells.py`,
-`tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`, `tests/test_testbench_loops.py`, `tests/test_kaaval_check.py`.
+`tests/test_kaaval_spice_cells.py`, `tests/test_netlister.py`, `tests/test_testbench_loops.py`, `tests/test_kaaval_check.py`, `tests/test_mcp_server.py`.
 
 ## What runs where
 

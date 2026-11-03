@@ -54,6 +54,7 @@ GAPS = [10e-6, 100e-6, 1e-3]
 LATE = 20e-6                      # enables / resets released LATE after the rails
 HELD = (0.0, 0.5, 1.0)            # an oscillation found with inputs undriven is re-run with them held at these
                                   # fractions of the highest supply
+HELD_LONGER = 4                   # a held level still moving at the end is held this many times longer, once
 HELD_BUDGET = 120.0               # seconds for those re-runs, on top of the test's own share of the review's budget
 WAVE_MAX_T = 5e-3                 # a control's logic wave covers at most the first 5 ms after the rails
 SEQ_CORNERS, SEQ_TEMPS, SEQ_VSCALES = ["tt", "ss", "ff"], [-40, 27, 125], [1.0]
@@ -425,9 +426,12 @@ def _held_level(plan, root, floating, volts, cond, ramp, settle, timeout, schedu
     p2 = dict(plan, biases=list(plan.get("biases") or []) + [dict(port=q, volts=volts) for q in floating])
     tb = compile_bench(p2, root)
     tb.supplies = lambda: [(f"Vplan{i}", p, float(x)) for i, (p, x) in enumerate(plan["supplies"].items())]
-    r, e = sim.startup_checked(tb, c, [t], v, ramp=ramp, settle=settle, timeout=timeout, schedule=schedule).get(
-        t, (None, "did not complete"))
-    st = None if e or not r else checks.state(r)
+    for hold in (settle, HELD_LONGER * settle):          # still moving at the end: held once more, longer
+        r, e = sim.startup_checked(tb, c, [t], v, ramp=ramp, settle=hold, timeout=timeout, schedule=schedule).get(
+            t, (None, "did not complete"))
+        st = None if e or not r else checks.state(r)
+        if st != "unresolved":
+            break
     return dict(volts=volts, state=st or str(e)[:80],
                 swing=(max(r["swing"].items(), key=lambda x: x[1]) if st == "oscillates" else None))
 
@@ -641,9 +645,15 @@ def bench_deck(plan, root, corner, temp, vscale=1.0, case=None):
         text = sim.powerup_deck(tb, corner, int(temp), float(vscale))
     else:
         text = sim.deck(tb, corner, int(temp), float(vscale))
+    return portable(text, root), None
+
+
+def portable(text, root):
+    """A deck as a designer runs it: the PDK line names the standard sky130 library (not this server's trimmed copy)
+    and no path of this server's workspace remains."""
     text = re.sub(r'^\.lib "[^"]*" (\w+)$', lambda m: "* point this at your sky130A install (volare / ciel)\n"
                   f'.lib "sky130A/libs.tech/ngspice/sky130.lib.spice" {m.group(1)}', text, count=1, flags=re.M)
-    return text.replace(os.path.realpath(root) + os.sep, "").replace(root.rstrip(os.sep) + os.sep, ""), None
+    return text.replace(os.path.realpath(root) + os.sep, "").replace(root.rstrip(os.sep) + os.sep, "")
 
 
 def wave(plan, root, corner, temp, vscale=1.0, case=None):

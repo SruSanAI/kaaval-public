@@ -210,7 +210,7 @@ try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, ''
       + `<details><summary>${(x.tried || []).length} attempts</summary>${(x.tried || []).map(t => `<div class="mono">×${t[0]} · current shift ${(t[1] * 100).toFixed(1)} % · ${esc(t[2])}</div>`).join('')}</details></div>`;
   };
   // a planned test's finding can be checked without Kaaval: the plan, every measured condition and an ngspice deck
-  const evHtml = f => f.detail && Number.isInteger(f.detail.k) ?
+  const evHtml = f => f.detail && (Number.isInteger(f.detail.k) || f.detail.loop) ?
     `<a class="evdl" href="/api/runs/${RID}/findings/${f.id}/evidence" download>Download evidence (plan, results, ngspice deck)</a>` : '';
   const card = f => {
     const d = document.createElement('div'); d.className = 'card'; d.tabIndex = 0;

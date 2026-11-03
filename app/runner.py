@@ -280,7 +280,8 @@ def testbench_loops(rid, ws, tbs):
                                             title=f"In the designer's own testbench, {what}. " + f["message"],
                                             location=f"{rel} · {lp['inst']} loop (cut at {lp['pin']})",
                                             detail=dict(f, loop={k: lp[k] for k in ("inst", "subckt", "net", "pin",
-                                                                                     "via")}, testbench=rel)))
+                                                                                     "via")}, testbench=rel,
+                                                        results=lp["results"])))
     for key, rels in said.items():
         if len(rels) > 1:
             store.event(rid, "testbench", f"The {key[0]} loop above is the same in {len(rels)} testbenches "

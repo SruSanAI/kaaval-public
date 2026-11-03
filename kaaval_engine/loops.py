@@ -217,3 +217,29 @@ def sweep(tb, loop, corners=None, conds=None, timeout=300):
             why = None if e or not r else linear(r)
             out[(c, t, v)] = (None, "not judged: " + why) if why else (r, e)
     return out
+
+
+def deck(tb, loop, corner="tt", temp=27, vscale=1.0):
+    """The loop-gain measurement of one found loop at one condition, as a plain ngspice deck a designer can run: the
+    testbench as drawn (only the elements joined to the loop's instance, its own AC sources set to zero), the loop
+    cut at the instance's output, both of Tian's injections, and the loop gain, unity-gain frequency and phase
+    margin computed by ngspice itself (printed, and T(f) written to loopgain.txt)."""
+    import copy
+    from kaaval_engine import sim
+    t2 = copy.copy(tb)
+    circ, _, y = sim.break_net(no_ac(connected(tb.circuit, loop["inst"])), loop["net"], [loop["pin"]])
+    t2.circuit, t2.analyses = circ, [".op"]
+    ctl = "\n".join([
+        f"* {loop['inst']} in feedback, its output {loop['net']} {loop['via']}: cut there (kv_brk_x | {y})",
+        "alter @vkvz[acmag]=1", "alter @ikvz[acmag]=0", "ac dec 20 1 10g",
+        "alter @vkvz[acmag]=0", "alter @ikvz[acmag]=1", "ac dec 20 1 10g",
+        "* Tian's method: T = (Y12 + Y21) / (Y11 + Y22) of the two-port seen at the cut",
+        f"let vxa = ac1.v(kv_brk_x)", f"let vya = ac1.v({y})", "let iza = ac1.i(vkvz)",
+        "let vb = ac2.v(kv_brk_x)", "let izb = ac2.i(vkvz)",
+        "let s1 = (1 - izb) / vb", "let s2 = izb / vb",
+        "let y11 = (-iza - s1 * vya) / (vxa - vya)", "let y21 = (iza - s2 * vya) / (vxa - vya)",
+        "let t = ((s1 - y11) + y21) / (y11 + (s2 - y21))",
+        "let tdb = db(t)", "let tph = 180 / pi * cph(t)",
+        "meas ac ugf when tdb=0 fall=1", "meas ac phase_at_ugf find tph at=ugf",
+        "let pm = 180 + phase_at_ugf", "print tdb[0] pm", "wrdata loopgain.txt tdb tph"])
+    return sim.deck(t2, corner, int(temp), float(vscale), control=ctl)

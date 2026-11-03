@@ -112,6 +112,25 @@ def test_oscillation_that_survives_a_held_input_stays_a_warning():
         in g["message"] and "Nothing is concluded" in g["message"], g["message"]
 
 
+def test_a_level_still_moving_is_held_longer_once():
+    holds = []
+    old = P.sim.startup_checked
+
+    def fake(tb, c, temps, v, settle=None, **kw):
+        holds.append(settle)
+        moving = settle < 1e-3                          # still moving at 300 us, settled when held 4x longer
+        return {temps[0]: (dict(BASE, moving=True) if moving else dict(BASE), None)}
+    P.sim.startup_checked = fake
+    try:
+        d = tempfile.mkdtemp()
+        open(os.path.join(d, "c.spice"), "w").write(".subckt amp vdd vss inp out\nR1 vdd out 1k\n.ends\n")
+        plan = dict(cell="c.spice#amp", kind="powerup", supplies={"vdd": 1.8}, grounds=["vss"], loads=[])
+        (f,) = P.held_inputs(plan, d, checks.startup(sweep({"out": 0.3}), floating=["inp"]), ["inp"], 20e-6, 300e-6, 150)
+    finally:
+        P.sim.startup_checked = old
+    assert holds == [300e-6, 1.2e-3] * 3 and f["severity"] == "info", (holds, f)
+
+
 def test_held_reruns_have_their_own_time():
     """Inside a review whose budget is spent, the held re-runs still get HELD_BUDGET seconds."""
     left = []

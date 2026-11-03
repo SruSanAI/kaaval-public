@@ -84,6 +84,17 @@ def test_review_reports_each_loop_once():
     assert f["title"].startswith("In the designer's own testbench, x1 (opamp) in feedback, its output VOUT back to")
     assert any("phase margin 1–34°" in e for e in events) and any("same in 2 testbenches" in e for e in events), events
 
+def test_the_loop_deck_prints_the_engines_phase_margin():
+    """The evidence deck runs as plain ngspice and computes the same margin the engine reports."""
+    import re
+    circuit = bench("0.3p")
+    tb = sim.Testbench(sch="own.sch", circuit=circuit, analyses=[".op"])
+    lp, = loops.find(circuit, DIRS)
+    r, e = loops.sweep(tb, lp, corners=["tt"], conds=[(27, 1.0)])[("tt", 27, 1.0)]
+    out, err = sim.run(loops.deck(tb, lp, "tt", 27, 1.0), timeout=120)
+    pm = float(re.search(r"^pm = (\S+)", out, re.M).group(1))
+    assert not err and abs(pm - r["pm"]) < 0.2, (pm, r["pm"], err)
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

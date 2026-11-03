@@ -93,6 +93,10 @@ def loops(ws, tb, budget=None, fix_traps=False):
     return _post("loops", dict({"ws": ws, "tb": tb, "fix_traps": fix_traps}, **({"budget": budget} if budget else {})))
 
 
+def loop_deck(ws, tb, loop, corner, temp, vscale=1.0):
+    return _post("loopdeck", {"ws": ws, "tb": tb, "loop": loop, "corner": corner, "temp": temp, "vscale": vscale})
+
+
 def corner(ws, tb, corner_name, conds, fix_traps=False):
     return _post("corner", {"ws": ws, "tb": tb, "corner": corner_name, "conds": conds, "fix_traps": fix_traps})["results"]
 

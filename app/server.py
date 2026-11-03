@@ -249,6 +249,8 @@ def api_evidence(rid, fid):
     plan, every condition the engine measured, and the testbench at the worst condition as a plain ngspice deck."""
     r, f, lv = store.run(rid), store.finding(rid, fid), store.live(rid) or {}
     det = (f or {}).get("detail") or {}
+    if r and f and det.get("loop"):
+        return _loop_evidence(rid, r, f, det, lv)
     plans = lv.get("plan_results") or []
     if not r or not f or not isinstance(det.get("k"), int) or det["k"] >= len(plans):
         abort(404)
@@ -291,6 +293,47 @@ def api_evidence(rid, fid):
         z.writestr("finding.json", json.dumps(info, indent=1, default=str))
         if deck:
             z.writestr("bench.sp", deck)
+    buf.seek(0)
+    name = re.sub(r"[^a-z0-9]+", "_", f"kaaval_{f['rule']}_{rid}".lower())
+    return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=name + ".zip")
+
+
+def _loop_evidence(rid, r, f, det, lv):
+    """A testbench-loop finding as a zip: the finding, the loop gain at every condition, and the loop-gain deck at the
+    worst condition (the designer's testbench, cut where the engine cut it; ngspice prints the phase margin)."""
+    corner, temp, vscale = _worst(det.get("worst"))
+    deck, derr = None, "the engine workspace is gone"
+    for ws in (lv.get("ws"), "renew"):
+        if ws == "renew":
+            root = os.path.join(runner.WORK, rid)
+            if not os.path.isdir(root):
+                break
+            ws = engine.upload(runner.design_files(root))
+            store.set_live(rid, dict(lv, ws=ws))
+        try:
+            d = engine.loop_deck(ws, det["testbench"], det["loop"], corner, temp, vscale)
+            deck, derr = d.get("deck"), d.get("error")
+            break
+        except engine.EngineError as e:
+            deck, derr = None, str(e)
+    info = dict(repository=r.get("repo"), commit=r.get("commit_sha"), testbench=det.get("testbench"),
+                loop=det["loop"], finding=dict(rule=f["rule"], severity=f["severity"], message=f.get("title"),
+                                               worst=det.get("worst"), n_bad=det.get("n_bad"), n=det.get("n")),
+                results=det.get("results") or [], engine=engine.health(),
+                deck=dict(corner=corner, temp=temp, vscale=vscale, error=derr))
+    readme = (f"Kaaval evidence: {f['rule']}\n\n{f.get('title')}\n\n"
+              f"finding.json  the finding, the loop and its loop gain at all {len(info['results'])} conditions\n"
+              + (f"loopgain.sp   your testbench {det.get('testbench')} at {corner}, {temp} C, supply x{vscale:g}, cut at "
+                 f"{det['loop']['pin']}:\n              both injections of Tian's method; ngspice prints the unity-gain "
+                 f"frequency and phase margin\n              and writes T(f) to loopgain.txt. Set the .lib line to your "
+                 f"sky130A install, then: ngspice -b loopgain.sp\n" if deck else f"loopgain.sp   not included: {derr}\n")
+              + "\nThe engine never edits your design: the deck cuts the loop with a 0 V source and adds the probes.\n")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("README.txt", readme)
+        z.writestr("finding.json", json.dumps(info, indent=1, default=str))
+        if deck:
+            z.writestr("loopgain.sp", deck)
     buf.seek(0)
     name = re.sub(r"[^a-z0-9]+", "_", f"kaaval_{f['rule']}_{rid}".lower())
     return send_file(buf, mimetype="application/zip", as_attachment=True, download_name=name + ".zip")

@@ -19,6 +19,7 @@ engine when one is connected (app/engine.py: fix).
     POST /v1/kaaval/cells        {ws, scope?}                           -> every circuit cell: ports, size, netlist text
     POST /v1/kaaval/plan         {ws, plan}                             -> validate + run a reviewer's test plan
     POST /v1/kaaval/loops        {ws, tb, budget?}                      -> loops the testbench closes, margins at PVT
+    POST /v1/kaaval/loopdeck     {ws, tb, loop, corner, temp, vscale}   -> that loop's loop-gain deck
     POST /v1/kaaval/wave         {ws, plan, corner, temp, vscale, case} -> one power-up waveform
     POST /v1/kaaval/health       {}                                     -> ngspice version, PDK installed
 
@@ -354,6 +355,22 @@ def deck():
         return _bad("unknown workspace, plan or corner", 404)
     text, e = kplan.bench_deck(pl, root, d["corner"], d.get("temp", 27), d.get("vscale", 1.0), d.get("case"))
     return jsonify({"ok": not e, "error": e, "deck": text})
+
+
+@bp.post("/loopdeck")
+def loopdeck():
+    """The loop-gain deck of one testbench loop (kaaval_engine.loops.deck) at one condition, for the evidence zip."""
+    d = request.get_json(silent=True) or {}
+    root, p = _tb(d)
+    lp = d.get("loop")
+    if not p or not isinstance(lp, dict) or d.get("corner") not in checks.CORNERS:
+        return _bad("unknown workspace, testbench, loop or corner", 404)
+    tb, _ = _testbench(d, p)
+    try:
+        text = kplan.portable(kloops.deck(tb, lp, d["corner"], d.get("temp", 27), d.get("vscale", 1.0)), root)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e), "deck": None})
+    return jsonify({"ok": True, "error": None, "deck": text})
 
 
 @bp.post("/loops")

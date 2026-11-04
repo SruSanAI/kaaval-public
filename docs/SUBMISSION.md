@@ -139,7 +139,7 @@ The no-model baseline is labelled as such in the UI.
 | 2:30–2:50 | Fix proposed, re-simulated at 45 conditions. Download the ngspice deck a designer can run without Kaaval. |
 | 2:50–3:00 | Repo link, "pre-silicon simulation on open PDKs, not foundry sign-off". |
 
-Recording: `~/Downloads/minnal-film/recorder/record_kaaval.py` (headless Chromium, real clicks, 1×) drives this shot
+Recording: a headless Chromium recorder (real clicks and typing, 1×, no cuts) drives this shot
 list against a running Kaaval with the demo zip. Only our own design is reviewed on camera, so no one else's results
 are shown.
 

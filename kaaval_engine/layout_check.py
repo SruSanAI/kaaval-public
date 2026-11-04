@@ -196,6 +196,22 @@ def generic_resistors(text):
 IDEAL = re.compile(r"(?i)^(?:[rcl]|\d[\w.]*)$")
 
 
+def strip_ideal(text):
+    """A SPICE netlist without its ideal R, C, L and current-source elements (no PDK model, so no layout shape), continuation lines
+    included; everything else as it was."""
+    out, drop = [], False
+    for line in text.splitlines():
+        if line.startswith("+"):
+            if not drop:
+                out.append(line)
+            continue
+        w = line.split()
+        drop = bool(w) and w[0][:1].lower() in "rcli" and not any("sky130_fd_pr__" in x for x in w[1:])
+        if not drop:
+            out.append(line)
+    return "\n".join(out) + "\n"
+
+
 def counts(text):
     """{model family: [layout devices, schematic devices]} from a Netgen report's device-class table, after Netgen's
     own merging of parallel and series devices (the number after '->'). Only the last table (the top cell) counts."""
@@ -447,6 +463,15 @@ def compare(root, pair, timeout=300):
         real = [d for d in out["diffs"] if d["kind"] != "ideal"]
         out["verdict"] = ("devices differ" if real else "ideal parts in schematic" if out["diffs"]
                           else "pins or nets only")
+        if out["verdict"] == "ideal parts in schematic":
+            # Netgen stopped at the ideal parts, before comparing sizes: compare again without them, so a device drawn
+            # at another size beside an ideal part is still found
+            t3, r3 = _netgen(lay, strip_ideal(sch), pair["cell"], timeout)
+            if r3 is not None and re.search(r"(?i)property errors were found|with property errors", t3 + r3):
+                out["verdict"] = "sizes differ"
+                out["sizes"] = sizes(t3)
+                out["ideal"] = [d for d in out["diffs"] if d["kind"] == "ideal"]
+                return out
         if out["verdict"] == "pins or nets only":
             # the smallest repair that makes Netgen match proves what alone differs: the split pins joined (the
             # cell above must join them), the bodies tied as the schematic ties them, or both

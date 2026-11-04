@@ -1,6 +1,6 @@
 """examples/demo_tapeout is the reference of test_kaaval_startup.py (BETA), drawn as xschem schematics: the files on
-disk match what tools/make_demo_tapeout.py writes, Kaaval netlists them to BETA's devices, and the tile reads as one
-analog block on ua[0]. No simulation."""
+disk match what tools/make_demo_tapeout.py writes, Kaaval netlists them to BETA's devices, the schematics are drawn with
+wires, and the tile reads as its three analog blocks. No simulation."""
 import os, re, sys, tempfile
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, HERE)
@@ -42,10 +42,16 @@ def test_netlist_is_the_tested_reference():
     assert "x1 vdd GND iout kv_ref" in tb.circuit and "R2 iout GND 50k" in tb.circuit and tb.analyses == [".op"]
 
 
-def test_tile_is_one_analog_block_on_ua0():
+def test_tile_is_three_analog_blocks():
     t = chip.read(D)
-    assert t["top"] == "tt_um_kaaval_demo" and t["analog_pads"] == ["ua[0]"]
-    assert [(i["type"], i["cell"], i["analog"]) for i in t["instances"]] == [("kv_ref", "xschem/kv_ref.sch", True)]
+    assert t["top"] == "tt_um_kaaval_demo" and t["analog_pads"] == ["ua[0]", "ua[1]", "ua[2]", "ua[3]"]
+    assert [(i["type"], i["cell"], i["analog"]) for i in t["instances"]] == [
+        ("kv_ref", "xschem/kv_ref.sch", True), ("kv_amp", "xschem/kv_amp.sch", True), ("kv_bias", "xschem/kv_bias.sch", True)]
+
+
+def test_schematics_are_drawn_with_wires():
+    for f in ("kv_ref", "kv_amp", "kv_bias", "tb_ref", "tb_amp", "tb_bias"):
+        assert sum(1 for l in open(os.path.join(D, "xschem", f + ".sch")) if l.startswith("N ")) >= 6, f
 
 
 if __name__ == "__main__":

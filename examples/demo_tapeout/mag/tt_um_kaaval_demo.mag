@@ -1,0 +1,15 @@
+magic
+tech sky130A
+timestamp 0
+<< checkpaint >>
+rect -630 -630 2745 4950
+rect 3370 -630 7345 7430
+use kv_amp  kv_amp_0
+timestamp 0
+transform 1 0 4400 0 1 1165
+box -400 -1165 2315 5635
+use kv_ref  kv_ref_0
+timestamp 0
+transform 1 0 400 0 1 685
+box -400 -685 1715 3635
+<< end >>

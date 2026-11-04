@@ -279,3 +279,25 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
             print("ok", name)
+
+
+def test_strip_ideal_keeps_pdk_parts():
+    from kaaval_engine import layout_check as LC
+    t = ("XM1 d g s b sky130_fd_pr__nfet_01v8 W=1 L=1\nR1 a b 2k\n+ m=1\nC1 a 0 1p\nI1 vdd vb 20u\n"
+         "XR2 a b sky130_fd_pr__res_xhigh_po_0p35 L=10\nR3 a b sky130_fd_pr__res_generic_po W=1 L=1\n")
+    assert LC.strip_ideal(t) == ("XM1 d g s b sky130_fd_pr__nfet_01v8 W=1 L=1\nXR2 a b sky130_fd_pr__res_xhigh_po_0p35 L=10\n"
+                                 "R3 a b sky130_fd_pr__res_generic_po W=1 L=1\n")
+
+
+def test_sizes_found_beside_ideal_parts():
+    """The demo tile's kv_amp layout draws M8 12 um wide (16 in the schematic) and its schematic has an ideal R, C and
+    current source: Netgen stops at those, so the sizes were never compared and the note said they were the same."""
+    from kaaval_engine import layout_check as LC
+    if not LC.available():
+        print("skip: Magic / Netgen not installed")
+        return
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples", "demo_tapeout")
+    res, fs, _ = LC.review(root)
+    by = {r["cell"]: r for r in res}
+    assert by["kv_amp"]["verdict"] == "sizes differ" and by["kv_amp"]["sizes"] == ["M8: w 12 in the layout, 16 in the schematic"]
+    assert by["kv_ref"]["verdict"] == "ideal parts in schematic"

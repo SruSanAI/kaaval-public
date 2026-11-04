@@ -712,7 +712,27 @@ def _queued(rid, src, root):
         _SLOTS.release()
 
 
+def adopt(rid, root):
+    """Move an unpacked upload (an `upload-*` folder in WORK, or the one project folder inside it) to WORK/<rid>, so
+    the run's folder is the project root, as it is for a cloned repository; returns it. Anything else stays put."""
+    work = os.path.realpath(WORK)
+    real = os.path.realpath(root)
+    rel = os.path.relpath(real, work)
+    top = rel.split(os.sep)[0]
+    if rel.startswith("..") or not top.startswith("upload-"):
+        return root
+    dest = os.path.join(work, rid)
+    if os.path.exists(dest):
+        return root
+    os.rename(real, dest)                      # the project folder itself (a zip's one top folder is dropped)
+    if real != os.path.join(work, top):
+        shutil.rmtree(os.path.join(work, top), ignore_errors=True)
+    return dest
+
+
 def start(src, root=None):
     rid = store.new_run(src.describe())
+    if root:                                   # an upload: its files move to the run's own folder, where the sheets,
+        root = adopt(rid, root)                # chip view and Layout 3D read them
     threading.Thread(target=_queued, args=(rid, src, root), daemon=True).start()
     return rid

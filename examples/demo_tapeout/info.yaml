@@ -5,10 +5,11 @@ project:
   description: "A current reference with no start-up device and an under-compensated op-amp, on purpose: Kaaval's demo design."
   language: "Analog"
   tiles: "1x2"
-  analog_pins: 3
+  analog_pins: 4
   uses_3v3: false
   top_module: "tt_um_kaaval_demo"
 pinout:
   ua[0]: "iout: reference current into the load"
   ua[1]: "inp: op-amp follower input"
   ua[2]: "out: op-amp follower output"
+  ua[3]: "ibias: bias mirror output"

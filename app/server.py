@@ -187,6 +187,61 @@ def api_sheet(rid):
                    sheets=[os.path.relpath(n, root) for n in names])
 
 
+ASK_LIMIT = int(os.environ.get("KAAVAL_ASK_LIMIT", "20"))      # questions per review (each one is a model call)
+
+
+def review_text(rid, lv):
+    """A finished review as the question-answering model reads it: what was reviewed, the tests, the blocks named and
+    every finding with its id and measured numbers (capped)."""
+    r, fs = store.run(rid) or {}, store.findings(rid)
+    out = [f"Repository: {lv.get('source') or r.get('repo')} (commit {(r.get('commit_sha') or '')[:7]})",
+           f"Circuit simulated by the designer's testbench: {lv.get('dut') or '-'} via {lv.get('testbench') or '-'}"]
+    for s, st in (lv.get("stages") or {}).items():
+        if st.get("note"):
+            out.append(f"Stage {s}: {st['note']}")
+    for b in lv.get("blocks") or []:
+        out.append(f"Block {b.get('cell')}: {b.get('function')} (risks: {', '.join(b.get('risks') or []) or '-'})")
+    for pr in lv.get("plan_results") or []:
+        p = pr.get("plan") or {}
+        out.append(f"Test run: {p.get('kind')} on {p.get('cell')} ({len(pr.get('results') or [])} conditions)"
+                   + (f" - why: {p.get('why')}" if p.get("why") else ""))
+    out.append(f"Findings ({len(fs)}):")
+    for f in fs:
+        d = f.get("detail") or {}
+        nums = {k: d[k] for k in ("worst", "n_bad", "n", "nominal_id", "worst_id", "nominal_margin", "worst_margin",
+                                  "margins", "loop", "floating", "held") if k in d}
+        if isinstance(nums.get("margins"), dict):
+            nums["margins"] = {k: nums["margins"].get(k) for k in ("pm", "gm_db", "ugf", "dc_gain_db")}
+        out.append(f"- id {f.get('id')}: {f['rule']} ({f.get('kind')}, {f.get('severity')}) at {f.get('location')}: "
+                   f"{(f.get('title') or '')[:700]} | {json.dumps(nums, default=str)[:600]}")
+    return dict(text="\n".join(out)[:60000], ids=[str(f.get("id")) for f in fs])
+
+
+@app.post("/api/runs/<rid>/ask")
+def api_ask(rid):
+    """A question about a finished review, answered by Muse Spark from the review's own findings and tests."""
+    lv = store.live(rid)
+    if lv is None or not store.run(rid):
+        abort(404)
+    if not planner.configured("muse"):
+        return jsonify(ok=False, error="Muse Spark is not connected on this server"), 503
+    if (store.run(rid) or {}).get("status") not in ("done", "error"):
+        return jsonify(ok=False, error="ask once the review has finished"), 409
+    q = str((request.get_json(silent=True) or {}).get("q", "")).strip()
+    if not q or len(q) > 1000:
+        return jsonify(ok=False, error="ask a question of up to 1000 characters"), 400
+    asked = lv.get("asked", 0)
+    if asked >= ASK_LIMIT:
+        return jsonify(ok=False, error=f"this review has had its {ASK_LIMIT} questions"), 429
+    try:
+        a = planner.ask(q, review_text(rid, lv))
+    except planner.PlannerError as e:
+        return jsonify(ok=False, error=str(e)), 502
+    store.set_live(rid, dict(store.live(rid) or {}, asked=asked + 1))
+    store.event(rid, "muse", f"Asked: {q[:200]}")
+    return jsonify(ok=True, answer=a["answer"], cites=a["cites"])
+
+
 @app.get("/runs/<rid>/layout3d")
 def layout3d_page(rid):
     if not store.run(rid):

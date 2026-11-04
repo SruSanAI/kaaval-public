@@ -12,7 +12,9 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     root.dataset.theme = dark ? 'light' : 'dark'; try { localStorage.setItem('kv-theme', root.dataset.theme) } catch (e) {}
   };
-  fetch('/api/minnal').then(r => r.json()).then(m => { const c = $('#minnal'); c.classList.add(m.minnal ? 'on' : 'off'); c.title = m.minnal ? 'Minnal connected: sizing fixes available' : 'Minnal not connected (optional): reviews run locally; sizing fixes need Minnal';
+  fetch('/api/minnal').then(r => r.json()).then(m => { museOn = !!m.muse;
+    if (museOn) { $('#who-st').textContent = 'checks proven in ngspice · Muse Spark connected'; $('#ask').placeholder = 'Ask Muse Spark about this review…' }
+    const c = $('#minnal'); c.classList.add(m.minnal ? 'on' : 'off'); c.title = m.minnal ? 'Minnal connected: sizing fixes available' : 'Minnal not connected (optional): reviews run locally; sizing fixes need Minnal';
     // the simulator and PDK the engine reports it actually runs, not a label
     const s = $('#simchip'); s.classList.add(m.sim_ok ? 'on' : 'off');
     s.querySelector('.t').textContent = m.sim_ok ? `${m.ngspice} · ${m.pdk}` : (m.ok ? 'simulator not found' : 'engine offline');
@@ -190,6 +192,29 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
 
   // ---------- right: reviewer feed ----------
   const feed = $('#feed'), flist = $('#flist'); const shown = new Set(); let after = 0;
+  // ---------- ask: a question about the finished review, answered by Muse Spark from the review's own findings ----------
+  let museOn = false, asking = false; const byId = {};
+  const askBox = $('#ask');
+  const askQ = async () => {
+    const q = askBox.value.trim(); if (!q || asking) return;
+    asking = true; askBox.value = ''; tab('a');
+    say(`<span class="ts">you</span>${esc(q)}`, 'q');
+    const wait = document.createElement('div'); wait.className = 'msg a'; wait.innerHTML = '<span class="spin s"></span>Muse Spark is reading the review…';
+    feed.appendChild(wait); wait.scrollIntoView({block: 'end'});
+    try {
+      const r = await fetch(`/api/runs/${RID}/ask`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({q})});
+      const j = await r.json();
+      if (!j.ok) { wait.innerHTML = `<span class="ts">Muse Spark</span>${esc(j.error || 'no answer')}`; return }
+      const chips = (j.cites || []).map(id => { const f = byId[id]; return f ? `<span class="cite"><button type="button" data-open="${id}">${esc(f.rule.split('/').pop())}</button>` +
+        `<button type="button" data-walkto="${id}" title="Walk me through it">▶</button></span>` : '' }).join('');
+      wait.innerHTML = `<span class="ts">Muse Spark</span>${esc(j.answer)}${chips ? `<div class="cites">${chips}</div>` : ''}`;
+      const open = id => { tab('f'); select(byId[id], cards[id].el) };
+      wait.querySelectorAll('[data-open]').forEach(b => b.onclick = () => open(b.dataset.open));
+      // the walk-through when this bench has it (tour.js), else the finding itself
+      wait.querySelectorAll('[data-walkto]').forEach(b => b.onclick = () => typeof walk === 'function' ? walk(byId[b.dataset.walkto]) : open(b.dataset.walkto));
+    } catch (e) { wait.textContent = 'Muse Spark could not answer: ' + e } finally { asking = false }
+  };
+  askBox.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); askQ() } });
   const tab = which => { const f = which === 'f'; $('#tab-f').setAttribute('aria-selected', f); $('#tab-a').setAttribute('aria-selected', !f);
     flist.hidden = !f; feed.hidden = f };
   $('#tab-f').onclick = () => tab('f'); $('#tab-a').onclick = () => tab('a');
@@ -433,10 +458,12 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       $('.pvt-h .hint').textContent = 'corner × temperature × supply · each cell is one transient run of the designer\'s testbench' }
     for (const e of j.events) { after = Math.max(after, e.ts);
       say(`<span class="ts">${new Date(e.ts * 1000).toTimeString().slice(0, 8)}</span>${esc(e.msg)}`, e.level === 'info' ? '' : e.level) }
+    j.findings.forEach(f => byId[f.id] = f);
     for (const f of j.findings) { if (!shown.has(f.id)) { shown.add(f.id); card(f) } else updateCard(f) }
     renderFams(j.findings, lv);
     $('#tab-fn').textContent = j.findings.filter(f => f.kind !== 'note').length + (j.findings.some(f => f.kind === 'note') ? ' + ' + j.findings.filter(f => f.kind === 'note').length : '');
     if (!switched && (r.status === 'done' || r.status === 'error')) { switched = true; if (j.findings.length) tab('f') }
+    if ((r.status === 'done' || r.status === 'error') && museOn && askBox.disabled) askBox.disabled = false;   // questions once it has finished
     setTb(j, lv, r);
     if (r.status === 'done' && !feed.dataset.end && !j.findings.length) { flist.innerHTML = '<div class="msg">No findings.</div>' }
     if (r.status === 'done' && !feed.dataset.end) { feed.dataset.end = 1;

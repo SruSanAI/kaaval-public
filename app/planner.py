@@ -179,7 +179,7 @@ def _output_text(j):
                    for c in item.get("content") or [] if c.get("type") in ("output_text", "text"))
 
 
-def _chat(arm, messages, timeout=420):
+def _chat(arm, messages, timeout=420, schema=None):
     """One planning call on the Responses API (the format Meta's own reference client uses: OpenAI-compatible,
     POST /v1/responses). The answer must follow SCHEMA: a strict json_schema format is asked first; if the
     endpoint does not take it, JSON mode with the schema in the instructions (the engine validates every plan
@@ -190,8 +190,9 @@ def _chat(arm, messages, timeout=420):
     system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
     turns = [{"role": m["role"], "content": [{"type": "output_text" if m["role"] == "assistant" else "input_text",
                                               "text": m["content"]}]} for m in messages if m["role"] != "system"]
+    schema = schema or SCHEMA
     body = {"model": _env(model_env) or model_def, "instructions": system, "input": turns,
-            "text": {"format": {"type": "json_schema", "name": SCHEMA["name"], "schema": SCHEMA["schema"],
+            "text": {"format": {"type": "json_schema", "name": schema["name"], "schema": schema["schema"],
                                 "strict": True}}}
     # reasoning effort: high by default (MUSE_EFFORT=low|medium|high, or "" to leave it to the endpoint). Meta's API
     # takes it (4 Nov: 686 vs 467 reasoning tokens, high vs low, on one question); a planning call is a reviewer
@@ -209,7 +210,7 @@ def _chat(arm, messages, timeout=420):
             body.pop("reasoning", None)               # an endpoint that refuses either: the plain JSON mode request
             body["text"] = {"format": {"type": "json_object"}}
             body["instructions"] = system + "\n\nAnswer with one JSON object that follows this JSON schema exactly:\n" + \
-                json.dumps(SCHEMA["schema"])
+                json.dumps(schema["schema"])
             j = _call(arm, body, timeout)
     except urllib.error.HTTPError as e:
         raise PlannerError(f"{arm} model {e.code}: {e.read()[:300].decode(errors='replace')}") from None
@@ -226,6 +227,27 @@ def _chat(arm, messages, timeout=420):
                      effort=(body.get("reasoning") or {}).get("effort"),
                      prompt_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
                      completion_tokens=usage.get("output_tokens", usage.get("completion_tokens")))
+
+
+ASK_SYSTEM = """You are the senior analog IC design reviewer who ran this review. Answer the designer's question about
+it in plain, precise engineering language, in at most 150 words. Use ONLY what the review below contains: its findings
+(each with an id, the rule, where, the measured numbers and the worst condition), the tests that ran and the blocks
+named. Never invent a number, a device or a condition; if the review does not contain the answer, say what it did and
+did not test. Prefer the mechanism (why it fails) and what to try next. Cite the id of every finding you rely on in
+`cites` (strings, as given); cite nothing you did not use."""
+ASK_SCHEMA = {"name": "kaaval_answer", "schema": {
+    "type": "object", "additionalProperties": False, "required": ["answer", "cites"],
+    "properties": {"answer": {"type": "string"}, "cites": {"type": "array", "items": {"type": "string"}}}}}
+
+
+def ask(question, review, arm="muse"):
+    """One question about a finished review, answered by the model from the review alone: {answer, cites, usage}.
+    Cited ids that are not findings of the review are dropped."""
+    msgs = [{"role": "system", "content": ASK_SYSTEM},
+            {"role": "user", "content": "# The review\n" + review["text"] + "\n\n# Question\n" + question}]
+    out, use = _chat(arm, msgs, schema=ASK_SCHEMA)
+    ids = set(review["ids"])
+    return dict(answer=str(out.get("answer", "")).strip(), cites=[c for c in out.get("cites") or [] if c in ids], usage=use)
 
 
 def context(docs, cells, floor):
@@ -277,6 +299,7 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
     log("plan", f"{arm} is reading {len(cells)} circuit cells and the docs")
     out, use = _chat(arm, msgs)
     usage = [use]
+    out["blocks"] = [dict(b, cell=resolve_cell(b["cell"], cells)) for b in out["blocks"]]
     for b in out["blocks"]:
         log("block", f"{b['cell']}: {b['function']} — {b['evidence']}", risks=b["risks"], startup=b["startup_path"])
     done = []

@@ -139,6 +139,19 @@ def test_unwired_pins_are_dropped_and_the_test_runs():
     assert "controls" not in p and p["supplies"] == sq["supplies"]
     assert PL.unwired(dict(sq, supplies={"VPWR": 1.8}), dict(ok=False, errors=["control port 'ena' is not a net of t.sch"])) is None
 
+
+def test_muse_cell_names_resolve_to_cells():
+    """Muse Spark's first real plans (4 Nov preflight) named cells "core_prel" for xschem/core_prel.sch: all refused."""
+    from app import planner as PL
+    cells = [dict(cell="xschem/core_prel.sch"), dict(cell="xschem/opamp_l.sch"), dict(cell="a/x.sch"), dict(cell="b/x.sch"),
+             dict(cell="mag/top.spice#amp")]
+    r = PL.resolve_cell
+    assert r("core_prel", cells) == "xschem/core_prel.sch" and r("xschem/opamp_l.sch", cells) == "xschem/opamp_l.sch"
+    assert r("OPAMP_L", cells) == "xschem/opamp_l.sch" and r("amp", cells) == "mag/top.spice#amp"
+    assert r("x", cells) == "x" and r("nothing", cells) == "nothing"       # ambiguous or unknown: left for the engine
+    cells += [dict(cell="mag/core_prel.lvs.spice#core_prel"), dict(cell="xschem/simulation/core_prel.spice#core_prel")]
+    assert r("core_prel", cells) == "xschem/core_prel.sch"                 # the schematic over its netlist copies
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

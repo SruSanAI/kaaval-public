@@ -117,6 +117,7 @@ def main():
                                                                                               runner.floor_note(tbs, None))}])
                 checked = []
                 for p in out["plans"]:
+                    p = dict(p, cell=planner.resolve_cell(p["cell"], cells))   # as planner.review resolves it
                     ep = planner._to_engine(p)
                     from kaaval_engine import plan as kp
                     root = os.path.join(os.path.expanduser(os.environ.get("KAAVAL_WS", "~/.kaaval/ws")), ws)

@@ -230,6 +230,21 @@ def context(docs, cells, floor):
     return "\n\n".join(parts)
 
 
+def resolve_cell(name, cells):
+    """The cell a plan means: its exact path, else the one cell whose schematic or subcircuit has that name
+    (core_prel -> xschem/core_prel.sch), the schematic when it also exists as exported or extracted netlists. Muse
+    Spark's first plans named cells that way (preflight, 4 Nov) and every one was refused. An ambiguous or unknown name
+    is left as it is, for the engine to refuse with its reasons."""
+    paths = [c["cell"] for c in cells]
+    if name in paths:
+        return name
+    key = lambda c: (c.split("#")[-1] if "#" in c else os.path.splitext(os.path.basename(c))[0]).lower()
+    want = key(str(name))
+    hits = [c for c in paths if key(c) == want]
+    sch = [c for c in hits if c.endswith(".sch")]       # a schematic and its exported or extracted netlists: the schematic
+    return hits[0] if len(hits) == 1 else sch[0] if len(sch) == 1 else name
+
+
 def _to_engine(p):
     e = dict(cell=p["cell"], kind=p["kind"], supplies={s["port"]: s["volts"] for s in p["supplies"]},
              grounds=p["grounds"], biases=p.get("biases") or [], ties=p.get("ties") or [],
@@ -261,6 +276,7 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
     clock = Clock()
     rest = lambda i: [dict(kind=q["kind"]) for q in chosen[i + 1:]]
     for i, p in enumerate(chosen):
+        p = dict(p, cell=resolve_cell(p["cell"], cells))
         ep = _to_engine(p)
         log("plan", f"Test planned on {p['cell']}: {p['why']}", plan=ep)
         r = run_plan(ws, ep, clock, rest(i))
@@ -275,7 +291,8 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
                                 "\nReturn the same JSON with that plan corrected (other plans unchanged)."}]
             out2, use2 = _chat(arm, fix_msgs)
             usage.append(use2)
-            cand = [q for q in out2["plans"] if q["cell"] == p["cell"]]
+            cand = [dict(q, cell=resolve_cell(q["cell"], cells)) for q in out2["plans"]]
+            cand = [q for q in cand if q["cell"] == p["cell"]]
             if cand:
                 ep = _to_engine(cand[0])
                 r = run_plan(ws, ep, clock, rest(i))

@@ -65,7 +65,7 @@
   };
 
   // ---------- the overlay ----------
-  function Tour(hooks) { this.h = hooks; this.i = 0; this.s = []; this.f = null; this.auto = null; this.build() }
+  function Tour(hooks) { this.h = hooks; this.i = 0; this.s = []; this.f = null; this.auto = null; this.playing = false; this.build() }
   Tour.prototype.build = function () {
     const el = this.el = document.createElement('div'); el.className = 'tour'; el.hidden = true;
     el.innerHTML = `<div class="tour-dim"></div><svg class="tour-ink" aria-hidden="true"><path class="tour-lead"/><rect class="tour-ring" rx="10"/></svg>
@@ -79,8 +79,9 @@
           <button class="btn icon" type="button" data-t="x" aria-label="Close the walk-through">×</button></div></div>`;
     document.body.appendChild(el);
     el.addEventListener('click', e => { const b = e.target.closest('[data-t]'); if (!b) return;
+      if (b.dataset.t !== 'auto' && this.playing) this.play(false);           // stepping by hand stops the narration
       ({back: () => this.go(this.i - 1), next: () => this.i < this.s.length - 1 ? this.go(this.i + 1) : this.close(), x: () => this.close(),
-        auto: () => this.play(!this.auto)})[b.dataset.t]() });
+        auto: () => this.play(!this.playing)})[b.dataset.t]() });
     document.addEventListener('keydown', e => { if (el.hidden) return;
       if (e.key === 'Escape') this.close(); else if (e.key === 'ArrowRight') this.go(Math.min(this.s.length - 1, this.i + 1));
       else if (e.key === 'ArrowLeft') this.go(Math.max(0, this.i - 1)) });
@@ -92,10 +93,32 @@
     this.go(0);
   };
   Tour.prototype.close = function () { this.play(false); this.el.hidden = true; document.body.classList.remove('touring'); this.h.done && this.h.done() };
+  // Play reads each step aloud with the browser's own voice (speechSynthesis: on the device, no key, nothing sent)
+  // and moves on when the sentence ends; without a voice it moves on every 5.2 s, silently
+  const VOICE = typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
+  Tour.prototype.say = function () {
+    if (!this.playing) return;
+    const st = this.s[this.i], next = () => { if (!this.playing) return;
+      if (this.i < this.s.length - 1) this.go(this.i + 1).then(() => this.say()); else this.play(false) };
+    clearTimeout(this.auto);
+    if (!VOICE) { this.auto = setTimeout(next, 5200); return }
+    speechSynthesis.cancel();
+    const line = `${st.title}. ${st.text}`.replace(/×/g, ' times ').replace(/°C/g, ' degrees');
+    const u = new SpeechSynthesisUtterance(line), t0 = Date.now(), my = this.i;
+    u.rate = 1.02;
+    // if the voice never says it has finished (no audio device, a browser quirk), move on after the sentence's length
+    const guard = setTimeout(() => { if (this.i === my) { speechSynthesis.cancel(); next() } }, 4000 + line.length * 75);
+    const done = () => { clearTimeout(guard); if (this.i === my) this.auto = setTimeout(next, Math.max(600, 2200 - (Date.now() - t0))) };
+    u.onend = done; u.onerror = done;
+    speechSynthesis.speak(u);
+  };
   Tour.prototype.play = function (on) {
-    clearInterval(this.auto);
-    if (on && this.i >= this.s.length - 1) this.go(0);     // Play on the last step plays it again from the start this.auto = on ? setInterval(() => this.i < this.s.length - 1 ? this.go(this.i + 1) : this.play(false), 5200) : null;
+    clearTimeout(this.auto); this.auto = null; this.playing = !!on;
+    if (VOICE) speechSynthesis.cancel();
     const b = this.el.querySelector('[data-t="auto"]'); b.textContent = on ? 'Pause' : 'Play'; b.setAttribute('aria-pressed', !!on);
+    if (!on) return;
+    if (this.i >= this.s.length - 1) this.go(0).then(() => this.say());   // Play on the last step plays it again
+    else this.say();
   };
   Tour.prototype.go = async function (i) {
     if (i < 0 || i >= this.s.length) return; this.i = i; const st = this.s[i], q = s => this.el.querySelector(s);

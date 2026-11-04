@@ -230,6 +230,12 @@ def keep_plans(rid, lv, res, by):
                                      f"not checked against a finer time step: {unc[0]['error'].split(', so')[0][13:]}. "
                                      f"They count as not tested, not as findings.", "warn")
         for f in r.get("findings") or []:
+            if (f["rule"] == "analog/oscillates" and lv.d.get("kind") == "dynamic"
+                    and pr["plan"].get("cell") == lv.d.get("dut")):
+                # the designer's own testbench shows this block is meant to switch: oscillating is its job
+                store.event(rid, "muse", f"{pr['plan']['cell']} keeps switching after power-up; its testbench shows "
+                                         "that is what it is for, so this is not reported as a finding")
+                continue
             nf += 1
             store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"],
                                         kind="note" if f["severity"] == "info" else "risk", title=f["message"],

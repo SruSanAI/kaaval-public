@@ -1,0 +1,10 @@
+* kv_xref: a 1.8 V beta-multiplier reference; its only start-up is a 200 fF kick from the 3.3 V rail (on purpose)
+.subckt kv_xref vdd avdd vss iout
+XM1 n1 n1 vss vss sky130_fd_pr__nfet_01v8 L=2 W=4 nf=1 m=1
+XM2 n2 n1 s2 vss sky130_fd_pr__nfet_01v8 L=2 W=16 nf=1 m=1
+R1 s2 vss 20k
+XM3 n1 n2 vdd vdd sky130_fd_pr__pfet_01v8 L=2 W=8 nf=1 m=1
+XM4 n2 n2 vdd vdd sky130_fd_pr__pfet_01v8 L=2 W=8 nf=1 m=1
+XM5 iout n2 vdd vdd sky130_fd_pr__pfet_01v8 L=2 W=8 nf=1 m=1
+Ckick avdd n1 200f
+.ends kv_xref

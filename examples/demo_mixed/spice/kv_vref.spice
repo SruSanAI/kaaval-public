@@ -1,0 +1,5 @@
+* kv_vref: a 0.9 V reference from a 100k / 100k divider, straight to its pad (on purpose: 50 kOhm output resistance)
+.subckt kv_vref vdd vss vref
+R1 vdd vref 100k
+R2 vref vss 100k
+.ends kv_vref

@@ -1,0 +1,16 @@
+# Kaaval mixed-domain demo tile (ours): a Tiny Tapeout-shaped analog project, never submitted to a shuttle.
+project:
+  title: "Kaaval demo 2: two rails, four blocks"
+  author: "Sanjay Sivakumar"
+  description: "An oscillator, a cross-domain reference, a 3.3 V to 1.8 V interface and a pad reference, each with a flaw on purpose."
+  language: "Analog"
+  tiles: "1x2"
+  analog_pins: 5
+  uses_3v3: true
+  top_module: "tt_um_kaaval_mixed"
+pinout:
+  ua[0]: "osc: ring oscillator output"
+  ua[1]: "iout: reference current (1.8 V core, start-up kick from 3.3 V)"
+  ua[2]: "in: 3.3 V logic input"
+  ua[3]: "out: 1.8 V logic output"
+  ua[4]: "vref: 0.9 V reference"

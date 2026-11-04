@@ -1,0 +1,7 @@
+* kv_cross: a 3.3 V inverter (thick-oxide) drives a 1.8 V inverter's gates directly, no level shifter (on purpose)
+.subckt kv_cross vdd avdd vss in out
+XH1 mid in avdd avdd sky130_fd_pr__pfet_g5v0d10v5 L=0.5 W=1 nf=1 m=1
+XH2 mid in vss vss sky130_fd_pr__nfet_g5v0d10v5 L=0.5 W=1 nf=1 m=1
+XL1 out mid vdd vdd sky130_fd_pr__pfet_01v8 L=0.15 W=1 nf=1 m=1
+XL2 out mid vss vss sky130_fd_pr__nfet_01v8 L=0.15 W=1 nf=1 m=1
+.ends kv_cross

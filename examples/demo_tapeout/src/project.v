@@ -1,5 +1,6 @@
 `default_nettype none
-// Kaaval demo tile: one analog block, the current reference (xschem/kv_ref.sch), output on ua[0].
+// Kaaval demo tile: two analog blocks, the current reference (xschem/kv_ref.sch, output on ua[0]) and an op-amp
+// follower (xschem/kv_amp.sch, input ua[1], output ua[2]).
 module tt_um_kaaval_demo (
     input  wire       VGND,
     input  wire       VDPWR,
@@ -17,4 +18,5 @@ module tt_um_kaaval_demo (
   assign uio_out = 8'b0;
   assign uio_oe = 8'b0;
   kv_ref r0 (.vdd(VDPWR), .vss(VGND), .iout(ua[0]));
+  kv_amp a0 (.vdd(VDPWR), .vss(VGND), .inp(ua[1]), .inn(ua[2]), .out(ua[2]));
 endmodule

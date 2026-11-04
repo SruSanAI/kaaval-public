@@ -1,12 +1,14 @@
 # Kaaval demo tile (ours): a Tiny Tapeout-shaped analog project, never submitted to a shuttle.
 project:
-  title: "Kaaval demo: current reference"
+  title: "Kaaval demo: current reference and op-amp follower"
   author: "Sanjay Sivakumar"
-  description: "A beta-multiplier current reference with no start-up device, on purpose: Kaaval's demo design."
+  description: "A current reference with no start-up device and an under-compensated op-amp, on purpose: Kaaval's demo design."
   language: "Analog"
   tiles: "1x2"
-  analog_pins: 1
+  analog_pins: 3
   uses_3v3: false
   top_module: "tt_um_kaaval_demo"
 pinout:
   ua[0]: "iout: reference current into the load"
+  ua[1]: "inp: op-amp follower input"
+  ua[2]: "out: op-amp follower output"

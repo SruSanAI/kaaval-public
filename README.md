@@ -266,4 +266,4 @@ by Sanjay Sivakumar · [github.com/SruSanCyborg](https://github.com/SruSanCyborg
 
 ## Licence
 
-**All rights reserved. Source-available for viewing and evaluation only; not open source.** You may read the code and run it unmodified to evaluate it. Using it for anything else, copying, modifying, redistributing, hosting it as a service or training models on it needs written permission first (sanjay@srusan.com). See [LICENSE](LICENSE). Minnal is not included and is not under this licence.
+**All rights reserved. Source-available for viewing and evaluation only; not open source.** You may read the code and run it unmodified to evaluate it. Using it for anything else, copying, modifying, redistributing, hosting it as a service or training models on it needs written permission first (sanjay@srusan.com). See [LICENSE](LICENSE).

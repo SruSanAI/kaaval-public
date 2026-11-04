@@ -19,7 +19,7 @@ This repository is published so that it can be read and evaluated. It is NOT ope
    implication, estoppel or otherwise. All rights not expressly granted here are reserved.
 
 4. Third-party parts. Files or tools from others (the sky130 PDK, ngspice, xschem, Magic, Netgen and any other
-   third-party material) stay under their own licences. Minnal is not included and is not under this licence.
+   third-party material) stay under their own licences.
 
 5. No warranty. The software is provided "as is", without warranty of any kind. In no event shall the copyright holder
    be liable for any claim, damages or other liability arising from it or its use.

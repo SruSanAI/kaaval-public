@@ -171,6 +171,97 @@ def _call(arm, body, timeout):
         return json.loads(r.read())
 
 
+def _call_stream(arm, body, timeout, on_text):
+    """_call with `stream: true`: on_text(text so far) after every output delta; returns the completed response (with
+    its reasoning summary), as _call does."""
+    base_env, base_def, _, _, key_env = ARMS[arm]
+    req = urllib.request.Request((_env(base_env) or base_def).rstrip("/") + "/responses",
+                                 data=json.dumps(dict(body, stream=True)).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {_env(key_env)}",
+                                          "Accept": "text/event-stream"})
+    text, done = "", None
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            try:
+                ev = json.loads(line[5:].strip())
+            except ValueError:
+                continue
+            if ev.get("type") == "response.output_text.delta":
+                text += ev.get("delta", "")
+                on_text(text)
+            elif ev.get("type") == "response.completed":
+                done = ev.get("response") or {}
+    if done is None:
+        raise ValueError("the stream ended without a completed response")
+    if not _output_text(done):
+        done["output_text"] = text
+    return done
+
+
+def reasoning_summary(j):
+    """The reasoning summary a Responses API reply carries (`reasoning.summary: auto`), as one string."""
+    return " ".join(s.get("text", "") for item in j.get("output") or [] if item.get("type") == "reasoning"
+                    for s in item.get("summary") or [] if s.get("text")).strip()
+
+
+class Watch:
+    """Turns the plan Muse is writing (the JSON so far) into events as each piece completes: a block named with its
+    function, a test chosen with its reason, in whatever order the model writes an object's fields; and one event
+    when the model stops thinking and starts writing. on_event(kind, text)."""
+    FIELD = r'"%s"\s*:\s*"((?:[^"\\]|\\.)*)"'
+
+    def __init__(self, on_event):
+        self.on, self.seen, self.t0 = on_event, set(), time.time()
+
+    @staticmethod
+    def _items(text):
+        """(start, text) of every object directly inside the plan's top-level arrays (blocks, plans), the last one
+        possibly still being written: a scan that follows strings and nesting, so a test's own nested objects
+        (supplies, loads) stay inside it."""
+        out, depth, ins, esc, start = [], 0, False, False, None
+        for i, ch in enumerate(text):
+            if ins:
+                esc, ins = (not esc and ch == "\\"), (ins if esc or ch != '"' else False)
+                continue
+            if ch == '"':
+                ins = True
+            elif ch in "{[":
+                depth += 1
+                if ch == "{" and depth == 3:           # { root  [ array  { item
+                    start = i
+            elif ch in "}]":
+                if ch == "}" and depth == 3 and start is not None:
+                    out.append((start, text[start:i + 1]))
+                    start = None
+                depth -= 1
+        if start is not None:
+            out.append((start, text[start:]))
+        return out
+
+    def _get(self, seg, name):
+        m = re.search(self.FIELD % name, seg)
+        return json.loads('"' + m.group(1) + '"') if m else None
+
+    def __call__(self, text):
+        if "start" not in self.seen:
+            self.seen.add("start")
+            self.on("start", f"Muse Spark finished thinking after {time.time() - self.t0:.0f} s and is writing its plan")
+        for a, seg in self._items(text):
+            cell = self._get(seg, "cell")
+            if not cell:
+                continue
+            kind, why, fn = self._get(seg, "kind"), self._get(seg, "why"), self._get(seg, "function")
+            if kind and why and ("p", a) not in self.seen:
+                self.seen.add(("p", a))
+                self.on("plan", f"Muse Spark plans a {kind} test on {cell}: {why}")
+            elif fn and not kind and ("b", a) not in self.seen:
+                self.seen.add(("b", a))
+                self.on("block", f"Muse Spark names {cell}: {fn}")
+
+
 def _output_text(j):
     """The model's text from a Responses API reply (what the SDK calls output_text)."""
     if isinstance(j.get("output_text"), str):
@@ -179,7 +270,7 @@ def _output_text(j):
                    for c in item.get("content") or [] if c.get("type") in ("output_text", "text"))
 
 
-def _chat(arm, messages, timeout=420, schema=None):
+def _chat(arm, messages, timeout=420, schema=None, on_text=None):
     """One planning call on the Responses API (the format Meta's own reference client uses: OpenAI-compatible,
     POST /v1/responses). The answer must follow SCHEMA: a strict json_schema format is asked first; if the
     endpoint does not take it, JSON mode with the schema in the instructions (the engine validates every plan
@@ -199,11 +290,17 @@ def _chat(arm, messages, timeout=420, schema=None):
     # reading a whole design, so it gets the model's most careful reasoning
     effort = os.environ.get("MUSE_EFFORT", "high").strip()
     if effort:
-        body["reasoning"] = {"effort": effort}
+        body["reasoning"] = {"effort": effort, "summary": "auto"}
     t = time.time()
     try:
         try:
-            j = _call(arm, body, timeout)
+            if on_text:                               # streamed, so the bench can show the plan as it is written
+                try:
+                    j = _call_stream(arm, body, timeout, on_text)
+                except (ValueError, json.JSONDecodeError):
+                    j = _call(arm, body, timeout)
+            else:
+                j = _call(arm, body, timeout)
         except urllib.error.HTTPError as e:
             if e.code != 400:
                 raise
@@ -224,6 +321,7 @@ def _chat(arm, messages, timeout=420, schema=None):
         raise PlannerError(f"{arm} model answered without valid JSON") from None
     usage = j.get("usage") or {}
     return out, dict(seconds=round(time.time() - t, 1), format=body["text"]["format"]["type"],
+                     reasoning=reasoning_summary(j)[:1200],
                      effort=(body.get("reasoning") or {}).get("effort"),
                      prompt_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
                      completion_tokens=usage.get("output_tokens", usage.get("completion_tokens")))
@@ -296,12 +394,17 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
         return _rules(ws, log, max_cells=int(os.environ.get("KAAVAL_BASELINE_CELLS", "6")), docs=docs)
     cells = engine.cells(ws)
     msgs = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": context(docs, cells, floor)}]
-    log("plan", f"{arm} is reading {len(cells)} circuit cells and the docs")
-    out, use = _chat(arm, msgs)
+    log("plan", f"Muse Spark is reading {len(cells)} circuit cells and the docs" if arm == "muse" else
+        f"{arm} is reading {len(cells)} circuit cells and the docs")
+    watch = Watch(lambda kind, text: log("think", text))
+    out, use = _chat(arm, msgs, on_text=watch)
+    if use.get("reasoning"):
+        log("think", "Muse Spark's reasoning: " + use["reasoning"])
     usage = [use]
     out["blocks"] = [dict(b, cell=resolve_cell(b["cell"], cells)) for b in out["blocks"]]
-    for b in out["blocks"]:
-        log("block", f"{b['cell']}: {b['function']} — {b['evidence']}", risks=b["risks"], startup=b["startup_path"])
+    for b in out["blocks"]:                            # (already said as it was written when the plan was streamed)
+        if not any(isinstance(k, tuple) and k[0] == "b" for k in watch.seen):
+            log("block", f"{b['cell']}: {b['function']} — {b['evidence']}", risks=b["risks"], startup=b["startup_path"])
     done = []
     chosen = out["plans"][:MAX_PLANS]
     clock = Clock()
@@ -309,7 +412,8 @@ def review(arm, ws, docs, floor, log=lambda kind, text, **kw: None):
     for i, p in enumerate(chosen):
         p = dict(p, cell=resolve_cell(p["cell"], cells))
         ep = _to_engine(p)
-        log("plan", f"Test planned on {p['cell']}: {p['why']}", plan=ep)
+        log("plan", f"Running the {p['kind']} test on {p['cell']}: {p['why']}" if not watch.seen else
+            f"Running the {p['kind']} test on {p['cell']}", plan=ep)
         r = run_plan(ws, ep, clock, rest(i))
         if r.get("skipped"):
             log("plan", f"Not run: the review's time budget ({PLAN_BUDGET:.0f} s for planned tests) was spent")

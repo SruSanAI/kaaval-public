@@ -13,7 +13,9 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     root.dataset.theme = dark ? 'light' : 'dark'; try { localStorage.setItem('kv-theme', root.dataset.theme) } catch (e) {}
   };
   fetch('/api/minnal').then(r => r.json()).then(m => { museOn = !!m.muse;
-    if (museOn) { $('#who-st').textContent = 'checks proven in ngspice · Muse Spark connected'; $('#ask').placeholder = 'Ask Muse Spark about this review…' }
+    if (museOn) { $('#who-st').textContent = 'checks proven in ngspice · Muse Spark connected'; $('#ask').placeholder = 'Ask Muse Spark about this review…';
+      $('#ask').disabled = false; const n = document.querySelector('.composer .note');
+      if (n) n.textContent = 'Muse Spark answers from this review\'s own findings, even while it runs. Every number above comes from a simulation.' }
     const c = $('#minnal'); c.classList.add(m.minnal ? 'on' : 'off'); c.title = m.minnal ? 'Minnal connected: sizing fixes available' : 'Minnal not connected (optional): reviews run locally; sizing fixes need Minnal';
     // the simulator and PDK the engine reports it actually runs, not a label
     const s = $('#simchip'); s.classList.add(m.sim_ok ? 'on' : 'off');
@@ -535,7 +537,8 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       if (st.state === 'skipped') { $('#pvt-n').textContent = 'not applicable · switching circuit'; $('#matrix').style.opacity = 0.35 }
       $('.pvt-h .hint').textContent = 'corner × temperature × supply · each cell is one transient run of the designer\'s testbench' }
     for (const e of j.events) { after = Math.max(after, e.ts);
-      say(`<span class="ts">${new Date(e.ts * 1000).toTimeString().slice(0, 8)}</span>${esc(e.msg)}`, e.level === 'info' ? '' : e.level) }
+      say(`<span class="ts">${new Date(e.ts * 1000).toTimeString().slice(0, 8)}</span>${esc(e.msg)}`,
+          e.level !== 'info' ? e.level : /^Muse Spark (names|plans|'s reasoning)/.test(e.msg) ? 'muse' : '') }
     j.findings.forEach(f => byId[f.id] = f);
     for (const f of j.findings) { if (!shown.has(f.id)) { shown.add(f.id); card(f) } else updateCard(f) }
     // a link from the chip view (?f=<id>, &walk=1) opens that finding here, and its walk-through if asked
@@ -545,7 +548,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     renderFams(j.findings, lv);
     $('#tab-fn').textContent = j.findings.filter(f => f.kind !== 'note').length + (j.findings.some(f => f.kind === 'note') ? ' + ' + j.findings.filter(f => f.kind === 'note').length : '');
     if (!switched && (r.status === 'done' || r.status === 'error')) { switched = true; if (j.findings.length) tab('f') }
-    if ((r.status === 'done' || r.status === 'error') && museOn && askBox.disabled) askBox.disabled = false;   // questions once it has finished
+
     setTb(j, lv, r);
     if (r.status === 'done' && !feed.dataset.end && !j.findings.length) { flist.innerHTML = '<div class="msg">No findings.</div>' }
     if (r.status === 'done' && !feed.dataset.end) { feed.dataset.end = 1;

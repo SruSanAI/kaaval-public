@@ -19,7 +19,9 @@ def test_ask_answers_from_the_review():
     os.environ["MUSE_API_KEY"] = "k"
     c = server.app.test_client()
     try:
-        assert c.post(f"/api/runs/{rid}/ask", json={"q": "why?"}).status_code == 409          # not finished yet
+        j = c.post(f"/api/runs/{rid}/ask", json={"q": "why?"}).get_json()                  # while it runs: answered,
+        assert j["ok"] and seen[-1][0][1]["content"].startswith("# The review\nTHE REVIEW IS STILL RUNNING")  # and said so
+        seen.clear()
         store.update_run(rid, status="done")
         j = c.post(f"/api/runs/{rid}/ask", json={"q": "why does it ring?"}).get_json()
         assert j == dict(ok=True, answer="x1 rings.", cites=[fid]), j

@@ -94,7 +94,8 @@
     build(d); history.replaceState(null, '', `?mag=${encodeURIComponent(mag)}`) });
   fetch(`/api/runs/${rid}/layout3d`).then(r => r.json()).then(j => {
     const base = m => m.split('/').pop().replace(/\.mag$/, '');
-    const mags = j.mags || [], want = q.get('mag') || (j.top && mags.find(m => base(m) === j.top)) || mags[0];
+    // an analog block first (a whole tile is standard cells and pads), then the top cell
+    const mags = j.mags || [], want = q.get('mag') || (j.analog || [])[0] || (j.top && mags.find(m => base(m) === j.top)) || mags[0];
     $('#pick').innerHTML = mags.map(m => `<option${m === want ? ' selected' : ''}>${esc(m)}</option>`).join('');
     $('#pick').onchange = () => load($('#pick').value);
     if (want) load(want); else $('#l3-meta').textContent = 'no Magic layout (.mag) in this repository';

@@ -19,7 +19,7 @@ def test_effort_high_then_plain_fallback():
         out, use = P._chat("muse", [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}])
     finally:
         P._call = old; os.environ.clear(); os.environ.update(env)
-    assert sent[0]["reasoning"] == {"effort": "high"} and sent[0]["text"]["format"]["type"] == "json_schema"
+    assert sent[0]["reasoning"] == {"effort": "high", "summary": "auto"} and sent[0]["text"]["format"]["type"] == "json_schema"
     assert "reasoning" not in sent[1] and sent[1]["text"]["format"]["type"] == "json_object"
     assert out == {"blocks": [], "plans": []} and use["format"] == "json_object" and use["effort"] is None
 

@@ -218,7 +218,7 @@ def review_text(rid, lv):
 
 
 ASK_PER_HOUR = int(os.environ.get("KAAVAL_ASKS_PER_HOUR", "30"))
-_asks = {}
+_asks, _asked = {}, {}
 
 
 def _ask_gate():
@@ -249,19 +249,22 @@ def api_ask(rid):
     g = _ask_gate()                                    # each question is a paid model call: same code as a review
     if g:
         return jsonify(ok=False, error=g[0]), g[1]
-    if (store.run(rid) or {}).get("status") not in ("done", "error"):
-        return jsonify(ok=False, error="ask once the review has finished"), 409
+    running = (store.run(rid) or {}).get("status") not in ("done", "error")
     q = str((request.get_json(silent=True) or {}).get("q", "")).strip()
     if not q or len(q) > 1000:
         return jsonify(ok=False, error="ask a question of up to 1000 characters"), 400
-    asked = lv.get("asked", 0)
-    if asked >= ASK_LIMIT:
-        return jsonify(ok=False, error=f"this review has had its {ASK_LIMIT} questions"), 429
+    with _starts_lock:                                 # counted here, never in the run's live record (the runner owns it)
+        asked = _asked.get(rid, 0)
+        if asked >= ASK_LIMIT:
+            return jsonify(ok=False, error=f"this review has had its {ASK_LIMIT} questions"), 429
+        _asked[rid] = asked + 1
+    rv = review_text(rid, lv)
+    if running:
+        rv = dict(rv, text="THE REVIEW IS STILL RUNNING: answer from what it has so far and say so.\n" + rv["text"])
     try:
-        a = planner.ask(q, review_text(rid, lv))
+        a = planner.ask(q, rv)
     except planner.PlannerError as e:
         return jsonify(ok=False, error=str(e)), 502
-    store.set_live(rid, dict(store.live(rid) or {}, asked=asked + 1))
     store.event(rid, "muse", f"Asked: {q[:200]}")
     return jsonify(ok=True, answer=a["answer"], cites=a["cites"])
 
@@ -290,7 +293,9 @@ def api_layout3d(rid):
             top = kchip.read(root).get("top") or ""
         except Exception:                          # noqa: BLE001 - no top module: no default
             top = ""
-        return jsonify(ok=True, mags=sorted(out)[:400], top=top)
+        from kaaval_engine import layout_check as LC     # cells drawn both ways: the analog blocks, to open first
+        analog = [p["mag"] for p in LC.pairs(root)]
+        return jsonify(ok=True, mags=sorted(out)[:400], top=top, analog=analog)
     try:
         return jsonify(ok=True, **layout3d.read(root, mag))
     except (ValueError, OSError) as e:

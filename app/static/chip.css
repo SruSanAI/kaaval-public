@@ -49,3 +49,5 @@
 .z-test .why{color:var(--text-3);font-size:11.5px}
 .z-sch{border:1px solid var(--border);border-radius:4px;background:var(--bg-0);overflow:auto;max-height:420px}
 .z-sch svg{width:100%;height:auto;display:block}
+.z-3d{margin:0 0 12px}
+.z-3d a{font:500 12px/1.4 var(--mono);color:var(--text-1);text-decoration:underline;text-underline-offset:3px}

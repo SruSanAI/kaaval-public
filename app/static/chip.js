@@ -129,7 +129,8 @@
       (x.findings.length ? x.findings.map(f => `<p><span class="mono r">${esc(PLAIN[f.rule] || f.rule)}</span> ${esc(f.message)}</p>`).join('') : '<p class="ok">no finding</p>') +
       `<p class="why">${esc(x.why || '')}</p></div>`).join('') :
       `<p class="z-empty">${b.analog ? 'This review ran no test on this block.' : 'Digital block: its timing and logic are shown, not simulated here.'}</p>`;
-    $('#insp').innerHTML = `<h3>Pins</h3>${pins}<h3>Tests on this block</h3>${tests}` +
+    const lay = b.mag ? `<p class="z-3d"><a href="/runs/${rid}/layout3d?mag=${encodeURIComponent(b.mag)}">Open its layout in 3D</a></p>` : '';
+    $('#insp').innerHTML = `${lay}<h3>Pins</h3>${pins}<h3>Tests on this block</h3>${tests}` +
       (b.cell && b.cell.endsWith('.sch') ? `<h3>Schematic</h3><div class="z-sch" id="sch"><p class="z-empty">drawing…</p></div>` : '');
     $('#insp').querySelectorAll('tr[data-pin]').forEach(r => r.onclick = () => trace(r.dataset.pin));
     if (b.cell && b.cell.endsWith('.sch'))

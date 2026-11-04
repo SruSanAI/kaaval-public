@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Layout 3D · Kaaval</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/kaaval.css">
+<link rel="stylesheet" href="/static/layout3d.css">
+<script>try{const t=localStorage.getItem('kv-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body class="l3d">
+<header class="top">
+  <a class="mark k-mark" href="/" aria-label="Kaaval home">Kaaval<i></i></a>
+  <nav class="crumbs" aria-label="where"><a id="c-run" href="#">review</a><span class="sep">/</span><a id="c-chip" href="#">chip</a><span class="sep">/</span><b class="mono" id="c-cell">layout</b></nav>
+  <div class="sp"></div>
+  <select class="btn" id="pick" aria-label="Layout cell"></select>
+  <button class="btn icon" id="theme" type="button" aria-label="Switch light or dark theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.25a5.75 5.75 0 0 1 0 11.5z" fill="currentColor"/></svg></button>
+</header>
+<main class="l3-main">
+  <section class="l3-view" id="view" aria-label="The cell's layout in 3D">
+    <div class="l3-hud mono"><span id="l3-meta">reading the layout…</span></div>
+    <div class="l3-tip mono" id="l3-tip" hidden></div>
+    <div class="l3-help mono">drag to orbit · scroll to zoom · right-drag to pan</div>
+  </section>
+  <aside class="l3-side" aria-label="Layers">
+    <div class="z-h mono"><span>STACK</span><span id="l3-n"></span></div>
+    <label class="l3-ex mono">explode <input type="range" id="explode" min="0" max="100" value="0"></label>
+    <label class="l3-ex mono">height ×<input type="range" id="zscale" min="1" max="40" value="12"></label>
+    <div id="layers" class="l3-layers"></div>
+    <p class="l3-note">Every rectangle is read from the committed Magic layout (.mag) as text, sub-cells placed by their own
+      transforms, each layer at its nominal sky130 height (exaggerated). What is drawn, not a process simulation.</p>
+  </aside>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="/static/layout3d.js"></script>
+</body>
+</html>

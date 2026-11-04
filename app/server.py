@@ -187,6 +187,37 @@ def api_sheet(rid):
                    sheets=[os.path.relpath(n, root) for n in names])
 
 
+@app.get("/runs/<rid>/layout3d")
+def layout3d_page(rid):
+    if not store.run(rid):
+        abort(404)
+    return _page("layout3d.html")
+
+
+@app.get("/api/runs/<rid>/layout3d")
+def api_layout3d(rid):
+    """A cell's committed Magic layout of this run's repository as stacked 3D layers (kaaval_engine.layout3d)."""
+    if not store.run(rid):
+        abort(404)
+    from kaaval_engine import layout3d
+    root = os.path.realpath(os.path.join(runner.WORK, rid))
+    mag = request.args.get("mag", "")
+    if not mag:                                    # no cell named: the layouts of this repository, to choose from
+        out = []
+        for d, ds, fs in os.walk(root):
+            ds[:] = [x for x in ds if not x.startswith(".")]
+            out += [os.path.relpath(os.path.join(d, f), root) for f in fs if f.endswith(".mag")]
+        try:                                       # the project's top cell (its top module), to open first
+            top = kchip.read(root).get("top") or ""
+        except Exception:                          # noqa: BLE001 - no top module: no default
+            top = ""
+        return jsonify(ok=True, mags=sorted(out)[:400], top=top)
+    try:
+        return jsonify(ok=True, **layout3d.read(root, mag))
+    except (ValueError, OSError) as e:
+        return jsonify(ok=False, error=str(e)), 404
+
+
 @app.get("/runs/<rid>/chip")
 def chip_page(rid):
     if not store.run(rid):
@@ -204,8 +235,15 @@ def api_chip(rid):
     root = os.path.realpath(os.path.join(runner.WORK, rid))
     tile = kchip.read(root)
     plans = lv.get("plan_results") or []
+    mags = {}                                          # each block's committed layout, for the 3D view
+    for d, ds, fns in os.walk(root):
+        ds[:] = [x for x in ds if not x.startswith(".")]
+        for f in fns:
+            if f.endswith(".mag"):
+                mags.setdefault(f[:-4].lower(), os.path.relpath(os.path.join(d, f), root))
     for inst in tile["instances"]:
         cell = (inst.get("cell") or "").lower()
+        inst["mag"] = mags.get(os.path.splitext(os.path.basename(cell))[0]) or mags.get(inst.get("type", "").lower())
         mine = [(k, pr) for k, pr in enumerate(plans) if (pr.get("plan") or {}).get("cell", "").lower() == cell]
         inst["tests"] = [dict(k=k, kind=pr["plan"].get("kind"), why=pr["plan"].get("why"),
                               findings=[dict(rule=f["rule"], message=f["message"]) for f in

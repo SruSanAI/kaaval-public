@@ -179,7 +179,7 @@ def _output_text(j):
                    for c in item.get("content") or [] if c.get("type") in ("output_text", "text"))
 
 
-def _chat(arm, messages, timeout=180):
+def _chat(arm, messages, timeout=420):
     """One planning call on the Responses API (the format Meta's own reference client uses: OpenAI-compatible,
     POST /v1/responses). The answer must follow SCHEMA: a strict json_schema format is asked first; if the
     endpoint does not take it, JSON mode with the schema in the instructions (the engine validates every plan
@@ -193,6 +193,12 @@ def _chat(arm, messages, timeout=180):
     body = {"model": _env(model_env) or model_def, "instructions": system, "input": turns,
             "text": {"format": {"type": "json_schema", "name": SCHEMA["name"], "schema": SCHEMA["schema"],
                                 "strict": True}}}
+    # reasoning effort: high by default (MUSE_EFFORT=low|medium|high, or "" to leave it to the endpoint). Meta's API
+    # takes it (4 Nov: 686 vs 467 reasoning tokens, high vs low, on one question); a planning call is a reviewer
+    # reading a whole design, so it gets the model's most careful reasoning
+    effort = os.environ.get("MUSE_EFFORT", "high").strip()
+    if effort:
+        body["reasoning"] = {"effort": effort}
     t = time.time()
     try:
         try:
@@ -200,6 +206,7 @@ def _chat(arm, messages, timeout=180):
         except urllib.error.HTTPError as e:
             if e.code != 400:
                 raise
+            body.pop("reasoning", None)               # an endpoint that refuses either: the plain JSON mode request
             body["text"] = {"format": {"type": "json_object"}}
             body["instructions"] = system + "\n\nAnswer with one JSON object that follows this JSON schema exactly:\n" + \
                 json.dumps(SCHEMA["schema"])
@@ -216,6 +223,7 @@ def _chat(arm, messages, timeout=180):
         raise PlannerError(f"{arm} model answered without valid JSON") from None
     usage = j.get("usage") or {}
     return out, dict(seconds=round(time.time() - t, 1), format=body["text"]["format"]["type"],
+                     effort=(body.get("reasoning") or {}).get("effort"),
                      prompt_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
                      completion_tokens=usage.get("output_tokens", usage.get("completion_tokens")))
 

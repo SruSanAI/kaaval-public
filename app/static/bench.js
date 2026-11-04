@@ -1,5 +1,6 @@
 // Kaaval bench: the review plays out live. Every colour and animation is driven by a simulation result.
 try { document.getElementById('zoom').href = location.pathname.replace(/\/$/, '') + '/chip' } catch (e) {}
+try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '') + '/layout3d' } catch (e) {}
 (() => {
   const $ = s => document.querySelector(s);
   const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));

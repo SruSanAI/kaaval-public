@@ -5,7 +5,7 @@ circuit cell with its ports and netlist, and what happened when the designer's t
 blocks can fail in silicon and how: a reference with no start-up path, a loop that may not settle, an output that a
 load drags down. It answers in a fixed JSON schema: what each block is, with the evidence for it, and test plans.
 
-Plans are data. Minnal's engine checks every plan against the circuit (the cell exists, every port is one of its
+Plans are data. Kaaval's engine checks every plan against the circuit (the cell exists, every port is one of its
 nets, every value is physical), builds the deck itself and runs it at the planned PVT conditions; a refused plan goes
 back to the model once with the engine's reasons. Nothing the model writes is ever executed as simulator input.
 

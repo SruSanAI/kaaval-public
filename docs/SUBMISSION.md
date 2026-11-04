@@ -111,8 +111,8 @@ All of `SruSanAI/kaaval`, starting 27 Oct: the netlister, the engine, the planne
 Silicon Twin, the timing outputs (`.lib`, SDC, supply corner), layout against schematic and post-layout re-runs,
 the backtest tools.
 
-Pre-existing and declared: Minnal, our private analog designer. Kaaval runs standalone without it. With
-`MINNAL_URL`/`MINNAL_KEY` set, only the sizing-fix search is called on Minnal.
+Kaaval uses no pre-existing product: everything it runs is in this repository, and sizing fixes are proposed by Muse
+Spark and proven by Kaaval's own engine at all 45 conditions.
 
 ## Where Muse Spark is load-bearing
 

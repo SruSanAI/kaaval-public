@@ -49,23 +49,12 @@ def static_files(p):
     return r
 
 
-@app.get("/api/minnal")
-def api_minnal():
-    """The local engine's simulator and PDK, Minnal's fix search (optional), and whether Muse Spark is connected.
-    No key ever reaches the browser."""
+@app.get("/api/status")
+def api_status():
+    """The local engine's simulator and PDK, and whether Muse Spark is connected. No key ever reaches the browser."""
     sim = engine.health()
-    out = dict(ok=True, why="local engine", ngspice=sim.get("ngspice"), pdk=sim.get("pdk"), sim_ok=bool(sim.get("ok")),
-               muse=planner.configured("muse"), minnal=False)
-    url, key = os.environ.get("MINNAL_URL", ""), os.environ.get("MINNAL_KEY", "")
-    if url and key:
-        import urllib.request
-        try:
-            req = urllib.request.Request(url.rstrip("/") + "/v1/health", headers={"Authorization": f"Bearer {key}"})
-            with urllib.request.urlopen(req, timeout=3) as r:
-                out["minnal"] = r.status == 200
-        except Exception:
-            pass
-    return jsonify(out)
+    return jsonify(ok=True, why="local engine", ngspice=sim.get("ngspice"), pdk=sim.get("pdk"), sim_ok=bool(sim.get("ok")),
+                   muse=planner.configured("muse"))
 
 
 @app.post("/api/parse")

@@ -221,7 +221,6 @@ Or as a container (ngspice, the pruned PDK and the app): `docker build -t kaaval
 | Environment | Enables |
 |---|---|
 | `MUSE_API_KEY` | Muse Spark plans the review (Meta Model API) |
-| `MINNAL_URL`, `MINNAL_KEY` | sizing fixes from Minnal (below) |
 | `KAAVAL_MAX_REVIEWS` | reviews simulating at once (default 2; others wait) |
 | `KAAVAL_ACCESS_CODE` | a code needed to start a review (for a public link) |
 | `KAAVAL_REVIEWS_PER_HOUR`, `KAAVAL_MAX_WAITING` | per-visitor limit (default 4/hour) and queue cap (default 6) |
@@ -236,10 +235,11 @@ Written during the event and in this repository: the netlister, units audit, PVT
 and stability checks, power-up sequence and pad checks, standard-cell loading, test plans, SPICE-subcircuit cells, waveforms, the Muse Spark planner and the web app. It runs
 on its own.
 
-One optional feature uses **Minnal**, SruSan's private analog design product that existed before the event: the
-sizing-fix search behind "Try a sizing fix". With `MINNAL_URL` and `MINNAL_KEY` set, the design's text files go to
-Minnal's keyed engine API and its verified proposal comes back; without them every review still runs in full and the
-button says the fix search is not connected. Minnal itself is not part of this submission.
+Sizing fixes are Muse Spark's, proven by this engine (`app/sizing.py`): on a headroom finding, "Ask Muse Spark for a
+sizing fix" sends Muse Spark the finding, the block's schematic and its operating point; it proposes W / L changes, the
+designer's testbench is simulated again at all 45 conditions, and the fix is called verified only when the device stays
+saturated everywhere and no new finding appears. A failed round goes back to Muse Spark with what was measured (three
+rounds at most). No outside service is used.
 
 ## Contributing
 

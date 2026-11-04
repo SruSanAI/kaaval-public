@@ -12,11 +12,10 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     root.dataset.theme = dark ? 'light' : 'dark'; try { localStorage.setItem('kv-theme', root.dataset.theme) } catch (e) {}
   };
-  fetch('/api/minnal').then(r => r.json()).then(m => { museOn = !!m.muse; minnalOn = !!m.minnal;
+  fetch('/api/status').then(r => r.json()).then(m => { museOn = !!m.muse;
     if (museOn) { $('#who-st').textContent = 'checks proven in ngspice · Muse Spark connected'; $('#ask').placeholder = 'Ask Muse Spark about this review…';
       $('#ask').disabled = false; const n = document.querySelector('.composer .note');
       if (n) n.textContent = 'Muse Spark answers from this review\'s own findings, even while it runs. Every number above comes from a simulation.' }
-    const c = $('#minnal'); c.classList.add(m.minnal ? 'on' : 'off'); c.title = m.minnal ? 'Minnal connected: sizing fixes available' : 'Minnal not connected (optional): reviews run locally; sizing fixes need Minnal';
     // the simulator and PDK the engine reports it actually runs, not a label
     const s = $('#simchip'); s.classList.add(m.sim_ok ? 'on' : 'off');
     s.querySelector('.t').textContent = m.sim_ok ? `${m.ngspice} · ${m.pdk}` : (m.ok ? 'simulator not found' : 'engine offline');
@@ -225,7 +224,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       [ICON.region, 'Cross-domain overstress (1.8 V devices, 3.3 V nodes)', fs.filter(f => f.rule === 'analog/overstress').length],
       [ICON.region, 'Pad drive (what the board and meter load)', fs.filter(f => f.rule === 'analog/weak_output').length],
       [ICON.units, 'Layout against schematic (Magic + Netgen)', n('layout/')],
-      [ICON.fix, 'Fixes sized by Minnal', null]];
+      [ICON.fix, 'Sizing fixes by Muse Spark, proven at 45 conditions', null]];
     const sel = filt && filt[1];
     $('#fams').innerHTML = rows.map(([ic, l, c], i) => { const fi = i < FAMS.length ? i : -1;
       return `<div class="famrow${c && c !== 'n/a' ? ' has' : ''}${fi >= 0 ? ' click' : ''}${sel && fi >= 0 && FAMS[fi][1] === sel ? ' on' : ''}"` +
@@ -236,7 +235,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   // ---------- right: reviewer feed ----------
   const feed = $('#feed'), flist = $('#flist'); const shown = new Set(); let after = 0;
   // ---------- ask: a question about the finished review, answered by Muse Spark from the review's own findings ----------
-  let museOn = false, minnalOn = false, asking = false; const byId = {};
+  let museOn = false, asking = false; const byId = {};
   const askBox = $('#ask');
   const askQ = async () => {
     const q = askBox.value.trim(); if (!q || asking) return;
@@ -269,10 +268,16 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   const fixHtml = f => {
     const x = f.fix;
     if (f.kind !== 'risk' || !/^analog\/headroom/.test(f.rule)) return '';   // the sizing search answers headroom findings
-    if (!x && !minnalOn) return '';                                          // the sizing search runs on Minnal: offered only when it is connected
-    if (!x) return `<button class="btn fixbtn" type="button" data-fix="${f.id}">${ICON.fix.replace('class="ic"', '')}Try a sizing fix</button>`;
-    if (x.state === 'running') return '<div class="fixres run"><span class="spin s"></span>Sizing: widening the matched group ×1.25 to ×8, each candidate re-simulated where it failed…</div>';
+    if (!x && !museOn) return '';                                            // Muse Spark proposes the sizes: offered when it is connected
+    if (!x) return `<button class="btn fixbtn" type="button" data-fix="${f.id}">${ICON.fix.replace('class="ic"', '')}Ask Muse Spark for a sizing fix</button>`;
+    if (x.state === 'running') return '<div class="fixres run"><span class="spin s"></span>Muse Spark is proposing sizes; each proposal is re-simulated at all 45 conditions…</div>';
     if (x.state === 'error') return `<div class="fixres bad">Could not size: ${esc(x.why || '')}</div>`;
+    const chg = c => (c || []).map(d => `${esc(d.device)} ${esc(d.before || '')} → ${esc(d.after || `W=${d.W} L=${d.L}`)}`).join(', ');
+    if (x.by === 'muse') return x.verified
+      ? `<div class="fixres good">${ICON.ok}<div><b>Verified fix, proposed by Muse Spark.</b> ${chg(x.changes)}: saturated at all ${x.n_conditions} conditions, no new finding`
+        + ` (round ${x.rounds.length} of ${x.rounds.length}).<div class="why">${esc(x.why || '')}</div></div></div>`
+      : `<div class="fixres meh"><div><b>No verified fix.</b> ${esc(x.why || '')}</div><details><summary>${x.rounds.length} proposal(s) by Muse Spark</summary>`
+        + x.rounds.map(r => `<div class="mono">${chg(r.changes)}: ${esc(r.result.why || (r.result.n_bad ? `still in triode at ${r.result.n_bad}/45` : (r.result.new || []).join(' | ')))}</div>`).join('') + '</details></div>';
     if (x.verified) return `<div class="fixres good">${ICON.ok}<div><b>Verified fix.</b> Widen ${esc(x.group.join(', '))} ×${x.factor}: saturated at all ${x.n_conditions} conditions, `
       + `worst margin ${(x.margin_before * 1e3).toFixed(0)} → ${(x.margin_after * 1e3).toFixed(0)} mV, nominal currents within ${(x.nominal_shift * 100).toFixed(1)} %.</div></div>`;
     const last = (x.tried || []).slice(-1)[0];

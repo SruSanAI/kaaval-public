@@ -1,5 +1,5 @@
 /* Kaaval — one design system for intake and bench.
-   SruSan minimal: paper + ink, one red; Archivo / Inter Tight / JetBrains Mono (the srusan.com and Minnal language) (APCA-checked, see reports/Analog tapeout guard UI and validation.md),
+   SruSan minimal: paper + ink, one red; Archivo / Inter Tight / JetBrains Mono (the srusan.com language) (APCA-checked, see reports/Analog tapeout guard UI and validation.md),
    Geist / Geist Mono, 4 px grid, alpha borders, status = icon + word, motion only on real events. */
 :root{color-scheme:light;
  --bg-0:#f4f3ef;--bg-1:#f9f8f5;--bg-2:#ebe9e3;--bg-3:#e2e0d9;--bg-hover:#ebe9e3;
@@ -444,3 +444,4 @@ body.touring .bench{user-select:none}
 .msg .cite button+button{border-left:1px solid var(--border);color:var(--redline)}
 .msg .cite button:hover{background:var(--bg-hover)}
 .msg.muse{color:var(--text-1);border-left:2px solid var(--redline);padding-left:8px}
+.fixres .why{margin-top:6px;color:var(--text-2);font-size:12px;line-height:1.45}

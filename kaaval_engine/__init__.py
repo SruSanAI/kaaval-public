@@ -1,1 +1,1 @@
-"""Kaaval's analog review engine (private to Minnal; Kaaval calls it over /v1/kaaval)."""
+"""Kaaval's analog review engine (the app calls it in-process over /v1/kaaval)."""

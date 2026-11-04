@@ -9,9 +9,6 @@
     const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     root.dataset.theme = dark ? 'light' : 'dark'; try { localStorage.setItem('kv-theme', root.dataset.theme) } catch (e) {}
   };
-  fetch('/api/minnal').then(r => r.json()).then(m => {
-    const c = $('#minnal'); c.classList.add(m.minnal ? 'on' : 'off'); c.title = m.minnal ? 'Minnal connected: sizing fixes available' : 'Minnal not connected (optional): reviews run locally; sizing fixes need Minnal';
-  });
 
   // ---------- boot: the engine's real steps, once per visit ----------
   const STEPS = ['load sky130 models · 5 corners', 'netlist schematics as text', 'check units against silicon',

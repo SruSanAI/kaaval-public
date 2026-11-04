@@ -11,7 +11,7 @@ cases.json: [{"name", "root": "<local folder of the design>", "expect": [{"cell"
               "source": "silicon: <url>" | "seeded: <what was removed>", "split": "dev" | "heldout"}]
 Only held-out cases count in the headline: development cases (the ones we looked at while building) are reported
 apart, so nothing is scored on a design the prompt or checks were tuned on.
-Needs MINNAL_URL / MINNAL_KEY, and MUSE_API_KEY / SMALL_API_KEY for the model arms (server environment only).
+Needs MUSE_API_KEY / SMALL_API_KEY for the model arms (server environment only).
 """
 import argparse, json, os, sys, time
 

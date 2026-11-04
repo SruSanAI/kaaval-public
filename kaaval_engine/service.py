@@ -3,8 +3,8 @@
 The bench calls these routes exactly as it would call a remote engine, through Flask's test client (app/engine.py).
 Everything that judges circuits is here and open: the text-only xschem netlister, the per-corner PVT simulator with
 trimmed sky130 libraries, the units audit, the operating-point checks, power-up and loop-stability test plans,
-SPICE-subcircuit cells and waveforms. The one thing not here is the sizing-fix search, which runs on Minnal's private
-engine when one is connected (app/engine.py: fix).
+SPICE-subcircuit cells and waveforms. Sizing fixes are proposed by Muse Spark and proven with these same routes
+(app/sizing.py).
 
     POST /v1/kaaval/workspace    {files: {path: text}}                  -> {ws}     design files, text only, capped
     POST /v1/kaaval/audit        {ws, scope?, tiles?}                   -> units / plausibility findings

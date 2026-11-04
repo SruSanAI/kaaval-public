@@ -1,7 +1,7 @@
 """runner.py — one Kaaval review run, streamed live: fetch -> audit -> testbench -> nominal -> PVT -> review.
 
 Nothing from the repository is executed: it arrives as files (shallow git fetch without GDS/OASIS, or a .zip) and
-its text files are handed to Minnal's private review engine (app/engine.py -> /v1/kaaval), which reads them as text
+its text files are handed to Kaaval's review engine (app/engine.py -> kaaval_engine, in this process), which reads them as text
 and simulates only decks it builds itself. This module orchestrates and keeps the live state for the bench.
 
 While it runs, a `live` state is kept for the bench UI: per-stage timing, the PVT grid (one cell per corner x
@@ -10,7 +10,7 @@ designer's own schematic names, and that schematic as SVG.
 """
 import itertools, os, re, shutil, subprocess, threading, time
 
-from app import engine, inputs, planner, store
+from app import engine, inputs, planner, sizing, store
 from guard import sch_svg
 from kaaval_engine import extract, layout_check, netlist, postlayout, sim
 from kaaval_engine import plan as kplan
@@ -670,20 +670,17 @@ def review(rid, src, root=None):
 
 
 def try_fix(rid, fid):
-    """Ask the engine for a verified sizing fix for one headroom finding and attach the outcome to it."""
+    """A sizing fix for one headroom finding: Muse Spark proposes sizes, the engine proves them at all 45 conditions
+    (app/sizing.py); the outcome is attached to the finding."""
     f = store.finding(rid, fid)
     lv = store.live(rid)
     if not f or not lv.get("ws") or not f["rule"].startswith("analog/headroom"):
         return
     store.update_finding(rid, fid, fix={"state": "running"})
     try:
-        r = engine.fix(design_files(os.path.join(WORK, rid)), lv["testbench"], f["detail"]["device"],
-                       bool(lv.get("corrected")))
+        r = sizing.fix(design_files(os.path.join(WORK, rid)), lv["testbench"], dict(f["detail"], title=f["title"]),
+                       bool(lv.get("corrected")), log=lambda msg, level="info": store.event(rid, "fix", msg, level))
         store.update_finding(rid, fid, fix=dict(r, state="done"))
-        store.event(rid, "fix", (f"{f['device']}: widening {', '.join(r['group'])} ×{r['factor']} keeps it saturated "
-                                 f"at all {r['n_conditions']} conditions" if r.get("verified") else
-                                 f"{f['device']}: no sizing fix ({r.get('why', 'not found')})"),
-                    "info" if r.get("verified") else "warn")
     except Exception as e:
         store.update_finding(rid, fid, fix={"state": "error", "why": str(e)})
 

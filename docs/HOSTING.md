@@ -10,7 +10,6 @@ Optional environment (set as host secrets, never in code or the image):
 | variable | enables |
 |---|---|
 | `MUSE_API_KEY` | Muse Spark plans the review (Meta Model API) |
-| `MINNAL_URL`, `MINNAL_KEY` | sizing fixes from Minnal, SruSan's private pre-existing product |
 | `KAAVAL_MAX_REVIEWS` | reviews simulating at once (default 2; others wait in a queue) |
 | `KAAVAL_ACCESS_CODE` | a code needed to start a review (share it only with judges) |
 | `KAAVAL_REVIEWS_PER_HOUR`, `KAAVAL_MAX_WAITING` | per-visitor limit (default 4/hour) and queue cap (default 6) |
@@ -26,7 +25,7 @@ Optional environment (set as host secrets, never in code or the image):
        app_port: 7860
        ---
 
-3. Add `MUSE_API_KEY` (and Minnal's, if used) under Settings → Variables and secrets.
+3. Add `MUSE_API_KEY` under Settings → Variables and secrets.
 
 Safety on a shared host: repositories are fetched as text files only (no GDS, nothing executed); every simulation
 runs a deck Kaaval writes itself; reviews queue beyond `KAAVAL_MAX_REVIEWS`; each simulation session is capped.

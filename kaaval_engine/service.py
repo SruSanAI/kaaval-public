@@ -391,7 +391,8 @@ def loops():
         for lp in found:
             sw = kloops.sweep(tb, lp)
             rows = [dict(corner=c, temp=t, vscale=v, error=e,
-                         **({} if not r else {k: r.get(k) for k in ("dc_gain_db", "ugf", "pm", "gm_db")}))
+                         **({} if not r else {k: r.get(k) for k in ("dc_gain_db", "ugf", "pm", "gm_db", "f", "mag",
+                                                                     "phase", "positive_dc")}))
                     for (c, t, v), (r, e) in sw.items()]
             judged = sum(1 for r, e in sw.values() if r and not e)
             out.append(dict(lp, subckt=subs.get(lp["inst"].lower(), ""), results=rows, judged=judged,

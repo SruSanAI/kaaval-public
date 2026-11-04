@@ -76,7 +76,7 @@ def headroom(sweep, min_margin=0.0):
         worst_c, worst = min(bad, key=lambda x: margin(x[1]))
         out.append(dict(rule="analog/headroom", severity="warn", device=dev,
                         nominal_margin=margin(d0), worst_margin=margin(worst), worst=worst_c,
-                        n_bad=len(bad), n=len(sweep),
+                        n_bad=len(bad), n=len(sweep), conds=[list(c) for c, _ in bad],
                         message=f"{dev} is in saturation at nominal (margin {margin(d0) * 1e3:.0f} mV) but in triode "
                                 f"at {len(bad)}/{len(sweep)} PVT conditions; worst {worst_c[0]}, {worst_c[1]} °C, "
                                 f"supply ×{worst_c[2]}: Vds {abs(worst.get('vds', 0)):.3f} V < Vdsat "
@@ -105,7 +105,7 @@ def bias(sweep, floor=1e-7, frac=0.2, share=0.3):
             continue
         wc, wi = min(low, key=lambda x: x[1])
         out.append(dict(rule="analog/bias_collapse", severity="warn", device=dev, nominal_id=i0, worst_id=wi,
-                        worst=wc, n_bad=len(low), n=len(sweep),
+                        worst=wc, n_bad=len(low), n=len(sweep), conds=[list(c) for c, _ in low],
                         message=f"{dev} carries {i0:.3g} A at nominal but below {frac:.0%} of it at {len(low)}/"
                                 f"{len(sweep)} conditions; worst {wc[0]}, {wc[1]} °C, supply ×{wc[2]}: {wi:.3g} A"))
     return out

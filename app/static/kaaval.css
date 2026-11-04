@@ -391,6 +391,51 @@ body.grain::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:
 .ev-read{font-size:0.6875rem;color:var(--text-2);margin-top:4px;min-height:16px}
 @media (max-width:1180px){.evid-b{grid-template-columns:minmax(0,1fr)}}
 .ev-lat .seqname{text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:18px}
+
+/* ---------- walk-through (tour.js): the bench dims, the target is ringed, a leader line runs to its reading ---------- */
+.tour{position:fixed;inset:0;z-index:60;pointer-events:none}
+.tour[hidden]{display:none}
+.tour-dim{position:absolute;inset:0;background:color-mix(in srgb,var(--bg-0) 62%,transparent);transition:clip-path 420ms var(--ease)}
+.tour-ink{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.tour-ring{fill:none;stroke:var(--redline);stroke-width:2;transition:x 420ms var(--ease),y 420ms var(--ease),width 420ms var(--ease),height 420ms var(--ease)}
+.tour-lead{fill:none;stroke:var(--redline);stroke-width:1.5;stroke-dasharray:4 4}
+.tour-ring.draw{stroke-dasharray:1200;stroke-dashoffset:1200;animation:tour-draw 700ms var(--ease) forwards}
+.tour-lead.draw{animation:tour-fade 500ms 350ms var(--ease) both}
+@keyframes tour-draw{to{stroke-dashoffset:0}}
+@keyframes tour-fade{from{opacity:0}to{opacity:1}}
+.tour-call{position:absolute;padding:8px 12px;border:1px solid var(--redline);border-radius:8px;background:var(--bg-1);color:var(--text-1);
+  font-size:0.8125rem;line-height:1.45;box-shadow:var(--shadow);animation:tour-fade 300ms 450ms var(--ease) both}
+.tour-call[hidden]{display:none}
+.tour-bar{position:absolute;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(720px,calc(100vw - 32px));
+  display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--border-strong);border-radius:12px;
+  background:var(--glass);backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.tour-tx{flex:1 1 320px;min-width:0}
+.tour-k{font-size:0.6875rem;letter-spacing:.08em;color:var(--text-3)}
+.tour-t{font:700 1rem/1.3 var(--display);color:var(--text-1);margin:2px 0 4px;text-wrap:balance}
+.tour-p{font-size:0.875rem;line-height:1.5;color:var(--text-2);max-width:62ch}
+.tour-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tour-dots{display:flex;gap:4px;margin-right:6px}
+.tour-dots i{width:6px;height:6px;border-radius:50%;background:var(--border-strong)}
+.tour-dots i.on{background:var(--redline)}
+.card .walk{margin-top:8px}
+body.touring .bench{user-select:none}
+@media (prefers-reduced-motion:reduce){.tour-dim,.tour-ring{transition:none}.tour-ring.draw,.tour-lead.draw,.tour-call{animation:none}}
+.tour .btn.primary{background:var(--text-1);color:var(--bg-1);border-color:var(--text-1)}
+.tour .btn:disabled{opacity:.4}
+.card .walkrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.card .walkrow .walk{margin-top:0}
+.card .chiplink{font:500 0.75rem/1.4 var(--mono);color:var(--text-2);text-decoration:underline;text-underline-offset:3px}
+.famrow.click{cursor:pointer;border-radius:6px;margin:0 -8px;padding:7px 8px;transition:background-color 120ms}
+.famrow.click:hover,.famrow.click:focus-visible{background:var(--bg-hover);color:var(--text-1);outline:none}
+.famrow.on{background:var(--bg-2);color:var(--text-1);box-shadow:inset 2px 0 0 var(--redline)}
+.fbar{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 10px;margin-bottom:8px;
+  border:1px dashed var(--border-strong);border-radius:8px;font-size:0.8125rem;color:var(--text-2)}
+.fbar[hidden]{display:none}
+.fbar b{color:var(--text-1);font-weight:600}
+.matrix .cell{cursor:pointer}
+.matrix .cell:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.cell.picked{outline:2px solid var(--text-1);outline-offset:2px}
+.stage.trail svg .dev.cond :is(path,line,rect,circle,polyline,polygon){stroke:var(--fail)}
 .msg.q{color:var(--text-1);border-left:2px solid var(--border-strong);padding-left:8px}
 .msg.a{color:var(--text-1);line-height:1.55}
 .msg .cites{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}

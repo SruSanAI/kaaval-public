@@ -71,7 +71,7 @@
     const netPins = {};
     let wires = '', boxes = '';
     blocks.forEach(b => {
-      const P = pos.get(b.name), bad = (b.tests || []).some(x => x.findings.length);
+      const fs = b.findings || [], bad = fs.some(f => f.kind === 'risk'), note = !bad && fs.length > 0, P = pos.get(b.name);
       const by = {top: [], bottom: [], left: [], right: []};
       b.pins.forEach(p => by[side(p, b)].push(p));
       const at = (s, i, n) => s === 'top' ? [P.x + (i + 1) * P.w / (n + 1), P.y] : s === 'bottom' ? [P.x + (i + 1) * P.w / (n + 1), P.y + P.h]
@@ -90,10 +90,10 @@
         else if (p.kind === 'internal') (netPins[p.net.toLowerCase()] = netPins[p.net.toLowerCase()] || []).push([x, y, id]);
         if (d) wires += `<path class="w ${p.kind}" d="${d}" data-pin="${esc(id)}"/>`;
       }));
-      boxes += `<g class="blk${b.analog ? ' a' : b.digital ? ' d' : ''}${bad ? ' bad' : ''}" data-b="${esc(b.name)}" tabindex="0" role="button" aria-label="${esc(b.name)}">` +
+      boxes += `<g class="blk${b.analog ? ' a' : b.digital ? ' d' : ''}${bad ? ' bad' : note ? ' note' : ''}" data-b="${esc(b.name)}" tabindex="0" role="button" aria-label="${esc(b.name)}">` +
         `<rect x="${P.x}" y="${P.y}" width="${P.w}" height="${P.h}" rx="4"/>` +
         `<text class="bn" x="${P.x + P.w / 2}" y="${P.y + P.h / 2 - 2}" text-anchor="middle">${esc(b.name)}</text>` +
-        `<text class="bt" x="${P.x + P.w / 2}" y="${P.y + P.h / 2 + 13}" text-anchor="middle">${esc(b.type)}${bad ? ' · finding' : ''}</text>${pins}</g>`;
+        `<text class="bt" x="${P.x + P.w / 2}" y="${P.y + P.h / 2 + 13}" text-anchor="middle">${esc(b.type)}${bad ? ` · ${fs.filter(f => f.kind === 'risk').length} design risk` : note ? ' · notes' : ''}</text>${pins}</g>`;
     });
     // internal nets: pins sharing a net are wired together through a midpoint bus
     Object.entries(netPins).forEach(([n, ps]) => {
@@ -109,7 +109,9 @@
       e.onclick = go; e.onkeydown = k => { if (k.key === 'Enter' || k.key === ' ') { k.preventDefault(); go() } };
     });
     S.querySelectorAll('.pin').forEach(e => e.onclick = ev => { ev.stopPropagation(); trace(e.dataset.pin) });
-    const first = blocks.find(b => (b.tests || []).some(x => x.findings.length)) || blocks.find(b => b.analog);
+    const asked = new URLSearchParams(location.search).get('f');          // from the bench: the block of that finding
+    const first = (asked && blocks.find(b => (b.findings || []).some(f => String(f.id) === asked))) ||
+      blocks.find(b => (b.findings || []).some(f => f.kind === 'risk')) || blocks.find(b => (b.findings || []).length) || blocks.find(b => b.analog);
     if (first) open(first, S.querySelector(`.blk[data-b="${CSS.escape(first.name)}"]`));
   }
 
@@ -125,12 +127,16 @@
     $('#i-cell').textContent = b.cell || b.type;
     const where = p => p.kind === 'rail' ? `${p.rail}` : p.pad ? p.pad : p.kind === 'internal' ? `net ${p.net} (to another block)` : p.kind === 'constant' ? `tied ${p.net}` : p.net || '—';
     const pins = `<table class="z-pins mono"><tbody>${b.pins.map(p => `<tr data-pin="${esc(b.name + '.' + p.port)}"><td>${esc(p.port)}</td><td class="k">${esc(p.kind.replace('_', ' '))}</td><td>${esc(where(p))}</td></tr>`).join('')}</tbody></table>`;
-    const tests = (b.tests || []).length ? b.tests.map(x => `<div class="z-test${x.findings.length ? ' bad' : ''}"><b class="mono">${esc(x.kind)}</b>` +
-      (x.findings.length ? x.findings.map(f => `<p><span class="mono r">${esc(PLAIN[f.rule] || f.rule)}</span> ${esc(f.message)}</p>`).join('') : '<p class="ok">no finding</p>') +
-      `<p class="why">${esc(x.why || '')}</p></div>`).join('') :
-      `<p class="z-empty">${b.analog ? 'This review ran no test on this block.' : 'Digital block: its timing and logic are shown, not simulated here.'}</p>`;
     const lay = b.mag ? `<p class="z-3d"><a href="/runs/${rid}/layout3d?mag=${encodeURIComponent(b.mag)}">Open its layout in 3D</a></p>` : '';
-    $('#insp').innerHTML = `${lay}<h3>Pins</h3>${pins}<h3>Tests on this block</h3>${tests}` +
+    // the same findings the bench shows, by id: open one there, or have the bench walk through it
+    const fs = b.findings || [];
+    const finds = fs.length ? fs.map(f => `<div class="z-test ${f.kind === 'risk' ? 'bad' : f.kind === 'note' ? 'note' : ''}">` +
+      `<b class="mono">${esc(f.kind === 'risk' ? 'design risk' : f.kind || '')}</b><p><span class="mono r">${esc(PLAIN[f.rule] || f.rule)}</span> ${esc(f.title)}</p>` +
+      `<p class="z-go"><a href="/runs/${rid}?f=${f.id}">Open on the bench</a><a href="/runs/${rid}?f=${f.id}&walk=1">Walk me through it</a></p></div>`).join('')
+      : `<p class="z-empty">${b.analog ? 'No finding on this block.' : 'Digital block: its timing and logic are shown, not simulated here.'}</p>`;
+    const tests = (b.tests || []).length ? `<p class="z-tests mono">${b.tests.map(x => `${esc(x.kind)} (${x.findings.length ? x.findings.length + ' finding' + (x.findings.length > 1 ? 's' : '') : 'no finding'})`).join(' · ')}</p>`
+      : `<p class="z-empty">${b.analog ? 'The review ran no planned test on this block.' : ''}</p>`;
+    $('#insp').innerHTML = `${lay}<h3>Pins</h3>${pins}<h3>Findings</h3>${finds}<h3>Tests run on this block</h3>${tests}` +
       (b.cell && b.cell.endsWith('.sch') ? `<h3>Schematic</h3><div class="z-sch" id="sch"><p class="z-empty">drawing…</p></div>` : '');
     $('#insp').querySelectorAll('tr[data-pin]').forEach(r => r.onclick = () => trace(r.dataset.pin));
     if (b.cell && b.cell.endsWith('.sch'))

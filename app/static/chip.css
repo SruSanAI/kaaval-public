@@ -49,5 +49,11 @@
 .z-test .why{color:var(--text-3);font-size:11.5px}
 .z-sch{border:1px solid var(--border);border-radius:4px;background:var(--bg-0);overflow:auto;max-height:420px}
 .z-sch svg{width:100%;height:auto;display:block}
+#tile .blk.note rect{stroke:var(--near);stroke-dasharray:4 3}
+#tile .blk.note .bt{fill:var(--near)}
+.z-test.note{border-color:var(--near);border-style:dashed}
+.z-go{display:flex;gap:14px;flex-wrap:wrap}
+.z-go a{font:500 12px/1.4 var(--mono);color:var(--text-1);text-decoration:underline;text-underline-offset:3px}
+.z-tests{font-size:12px;color:var(--text-2);line-height:1.6}
 .z-3d{margin:0 0 12px}
 .z-3d a{font:500 12px/1.4 var(--mono);color:var(--text-1);text-decoration:underline;text-underline-offset:3px}

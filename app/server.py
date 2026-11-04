@@ -314,6 +314,7 @@ def api_chip(rid):
     root = os.path.realpath(os.path.join(runner.WORK, rid))
     tile = kchip.read(root)
     plans = lv.get("plan_results") or []
+    fs = store.findings(rid)
     mags = {}                                          # each block's committed layout, for the 3D view
     for d, ds, fns in os.walk(root):
         ds[:] = [x for x in ds if not x.startswith(".")]
@@ -328,7 +329,26 @@ def api_chip(rid):
                               findings=[dict(rule=f["rule"], message=f["message"]) for f in
                                         ((pr.get("result") or {}).get("findings") or [])])
                          for k, pr in mine]
+        # every stored finding of this block, with its id: the same finding the bench shows and walks through
+        inst["findings"] = [dict(id=f["id"], rule=f["rule"], kind=f.get("kind"), severity=f.get("severity"),
+                                 title=f.get("title", "")[:400]) for f in fs if _belongs(f, cell, lv)]
     return jsonify(ok=True, **tile)
+
+
+def _belongs(f, cell, lv):
+    """Does a stored finding belong to the chip block drawn from `cell` (a schematic path, lower case)? A planned
+    test's cell; a testbench loop's cut subcircuit (by the schematic's name); a layout comparison's schematic;
+    otherwise the circuit the review simulated. A units trap belongs to no block."""
+    if not cell:
+        return False
+    d = f.get("detail") or {}
+    if (d.get("plan") or {}).get("cell"):
+        return d["plan"]["cell"].lower() == cell
+    if d.get("loop"):
+        return os.path.splitext(os.path.basename(cell))[0] == (d["loop"].get("subckt") or "").lower()
+    if f["rule"].startswith("layout/"):
+        return (d.get("sch") or "").lower() == cell
+    return f.get("kind") != "trap" and (lv.get("dut") or "").lower() == cell
 
 
 @app.get("/api/runs/<rid>/wave")

@@ -132,7 +132,21 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       h += `<span class="rh">${c}</span>` + g.temps.map(t => `<div class="grp">${g.vscales.map(v =>
         `<span class="cell${c === 'tt' && t === 27 && v === 1 ? ' nom' : ''}" data-k="${c}|${t}|${v}"></span>`).join('')}</div>`).join('');
     }
-    m.innerHTML = h; m.querySelectorAll('.cell').forEach(el => cellEls[el.dataset.k] = el);
+    m.innerHTML = h; m.querySelectorAll('.cell').forEach(el => { cellEls[el.dataset.k] = el; el.tabIndex = 0; el.setAttribute('role', 'button') });
+    // a condition, clicked: its transistors that fail there are marked on the schematic, and the grid says what happened
+    m.addEventListener('click', e => { const el = e.target.closest('.cell'); if (el) pickCell(el.dataset.k) });
+    m.addEventListener('keydown', e => { const el = e.target.closest('.cell'); if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pickCell(el.dataset.k) } });
+  };
+  const pickCell = k => {
+    const c = lastCells.find(x => `${x.corner}|${x.temp}|${x.vscale}` === k); if (!c) return;
+    Object.values(cellEls).forEach(x => x.classList.remove('picked')); cellEls[k].classList.add('picked');
+    if (sheet) toTop();
+    svg && svg.querySelectorAll('.dev.sel, .dev.cond').forEach(g => g.classList.remove('sel', 'cond'));
+    const devs = (c.devices || []).map(d => String(d).split(' ')[0]), els = devs.map(devEl).filter(Boolean);
+    els.forEach(g => g.classList.add('cond')); stage.classList.toggle('trail', els.length > 0);
+    $('#pvt-n').innerHTML = `${seen.size} / 45<span class="selnote">· ${esc(condTxt([c.corner, c.temp, c.vscale]))}: ` +
+      (c.status === 'err' ? `did not simulate (${esc(c.note || '')})` : devs.length ? `${devs.length} transistor(s) fail here: ${esc(devs.slice(0, 6).join(', '))}` :
+       c.outputs ? 'behaves as at nominal' : 'every saturated transistor keeps saturation') + '</span>';
   };
   const seen = new Set();
   const addCells = cells => {
@@ -171,7 +185,31 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       return `<li class="step ${st.state}"><span class="mk"></span><span class="l">${names[s]}</span><span class="t num">${t}</span><span class="n">${esc(st.note || '')}</span></li>`;
     }).join('');
   };
+  // a check is a filter: clicking it shows only its findings in the list (and says so when it found none)
+  const FAMS = [['units/', 'Units and impossible sizes'], ['analog/headroom', 'Headroom across PVT'], ['analog/bias', 'Bias that collapses'],
+    ['analog/stops_switching', 'Switching across PVT'], [/^analog\/(no_startup|two_states|oscillates|marginal_startup|floating_input)/, 'Power-up'],
+    [/^analog\/(unstable|low_phase_margin)/, 'Stability'], ['analog/sequence_dependent', 'Chip power-up sequence'],
+    ['analog/overstress', 'Cross-domain overstress'], ['analog/weak_output', 'Pad drive'], ['layout/', 'Layout against schematic']];
+  const famOf = (p, rule) => typeof p === 'string' ? rule.startsWith(p) : p.test(rule);
+  let filt = null, lastFs = [];
+  const applyFilter = () => {
+    let n = 0;
+    Object.values(cards).forEach(c => { const on = !filt || famOf(filt[0], c.f.rule); c.el.hidden = !on; n += on });
+    let bar = $('#fbar'); if (!bar) { bar = document.createElement('div'); bar.id = 'fbar'; bar.className = 'fbar'; flist.prepend(bar) }
+    bar.hidden = !filt;
+    if (filt) bar.innerHTML = `<span>${n ? `${n} finding${n > 1 ? 's' : ''} from <b>${esc(filt[1])}</b>` :
+      `<b>${esc(filt[1])}</b> found nothing in this review`}</span><button class="btn" type="button" id="fall">Show all</button>`;
+    if (filt) $('#fall').onclick = () => { filt = null; applyFilter(); document.querySelectorAll('.famrow.on').forEach(x => x.classList.remove('on')) };
+  };
+  $('#fams').addEventListener('click', e => {
+    const r = e.target.closest('.famrow[data-fam]'); if (!r) return;
+    const f = FAMS[+r.dataset.fam]; filt = filt && filt[1] === f[1] ? null : f;
+    document.querySelectorAll('.famrow').forEach(x => x.classList.toggle('on', !!filt && x === r));
+    tab('f'); applyFilter();
+  });
+  $('#fams').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.famrow[data-fam]')) { e.preventDefault(); e.target.click() } });
   const renderFams = (fs, lv) => {
+    lastFs = fs;
     const n = p => fs.filter(f => f.rule.startsWith(p)).length;
     const dyn = lv && lv.kind === 'dynamic';
     const rows = [[ICON.units, 'Units and impossible sizes', n('units/')], [ICON.region, 'Headroom across PVT', dyn ? 'n/a' : n('analog/headroom')],
@@ -179,15 +217,18 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       [ICON.region, 'Switching across PVT', dyn ? n('analog/stops_switching') : 'n/a'],
       [ICON.bias, 'Power-up, tests by Muse Spark', lv && lv.stages && lv.stages.muse && lv.stages.muse.state === 'skipped' ? 'n/a'
         : fs.filter(f => /^analog\/(no_startup|two_states|oscillates)/.test(f.rule)).length],
-      [ICON.region, 'Stability, tests by Muse Spark', lv && lv.stages && lv.stages.muse && lv.stages.muse.state === 'skipped' ? 'n/a'
-        : fs.filter(f => /^analog\/(unstable|low_phase_margin)/.test(f.rule)).length],
+      [ICON.region, 'Stability (testbench loops, and tests by Muse Spark)', fs.filter(f => /^analog\/(unstable|low_phase_margin)/.test(f.rule)).length],
       [ICON.bias, 'Chip power-up sequence, by Muse Spark', lv && lv.stages && lv.stages.muse && lv.stages.muse.state === 'skipped' ? 'n/a'
         : fs.filter(f => f.rule === 'analog/sequence_dependent').length],
       [ICON.region, 'Cross-domain overstress (1.8 V devices, 3.3 V nodes)', fs.filter(f => f.rule === 'analog/overstress').length],
       [ICON.region, 'Pad drive (what the board and meter load)', fs.filter(f => f.rule === 'analog/weak_output').length],
+      [ICON.units, 'Layout against schematic (Magic + Netgen)', n('layout/')],
       [ICON.fix, 'Fixes sized by Minnal', null]];
-    $('#fams').innerHTML = rows.map(([ic, l, c]) => `<div class="famrow${c && c !== 'n/a' ? ' has' : ''}"${c === 'n/a' ? ` title="${esc(lv.kind_reason || '')}"` : ''}>${ic}<span>${l}</span>` +
-      (c == null ? '<span class="soon">next</span>' : c === 'n/a' ? '<span class="soon">n/a</span>' : `<span class="c num">${c}</span>`) + '</div>').join('');
+    const sel = filt && filt[1];
+    $('#fams').innerHTML = rows.map(([ic, l, c], i) => { const fi = i < FAMS.length ? i : -1;
+      return `<div class="famrow${c && c !== 'n/a' ? ' has' : ''}${fi >= 0 ? ' click' : ''}${sel && fi >= 0 && FAMS[fi][1] === sel ? ' on' : ''}"` +
+        (fi >= 0 ? ` data-fam="${fi}" role="button" tabindex="0"` : '') + (c === 'n/a' ? ` title="${esc(lv.kind_reason || '')}"` : '') + `>${ic}<span>${l}</span>` +
+        (c == null ? '<span class="soon">next</span>' : c === 'n/a' ? '<span class="soon">n/a</span>' : `<span class="c num">${c}</span>`) + '</div>' }).join('');
   };
 
   // ---------- right: reviewer feed ----------
@@ -239,35 +280,36 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   // a planned test's finding can be checked without Kaaval: the plan, every measured condition and an ngspice deck
   const evHtml = f => f.detail && (Number.isInteger(f.detail.k) || f.detail.loop) ?
     `<a class="evdl" href="/api/runs/${RID}/findings/${f.id}/evidence" download>Download evidence (plan, results, ngspice deck)</a>` : '';
+  const PLAIN = {'analog/no_startup': 'This circuit can wake up dead.', 'analog/two_states': 'This circuit can wake up in the wrong state.',
+    'analog/oscillates': 'This circuit never settles: it oscillates.', 'analog/unstable': 'This loop is unstable.',
+    'analog/low_phase_margin': 'This loop rings: its margins are thin.',
+    'analog/sequence_dependent': 'This circuit works only if the chip powers up in the right order.',
+    'analog/overstress': 'A 1.8 V transistor sees a 3.3 V voltage: it will wear out or break.',
+    'analog/weak_output': 'This output cannot drive the pad: what you measure depends on your meter.',
+    'layout/devices_differ': 'The layout builds other devices than the schematic: the chip is not the circuit you simulated, or the schematic is out of date.',
+    'layout/sizes_differ': 'The layout draws its devices at other sizes than the schematic.',
+    'layout/ports_differ': 'The same circuit as the schematic, but its ports are named or wired otherwise: check that every port is connected.',
+    'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.',
+    'layout/ideal_parts': 'The schematic simulates ideal parts (a capacitor written as its value, an R with no model) that the layout cannot draw.',
+    'layout/bodies_untied': 'The layout leaves transistor bodies (an n-well, the substrate) on a net of their own; tied as the schematic ties them, the circuit matches.',
+    'layout/split_pin': 'A pin is drawn in pieces that are not connected to each other: only what joins them above makes them one net.'};
   const card = f => {
     const d = document.createElement('div'); d.className = 'card'; d.tabIndex = 0;
     const pill = f.kind === 'trap' ? `<span class="pill trap">${ICON.trap}Simulation trap</span>` :
       f.kind === 'note' ? '<span class="pill note">Spread</span>' : '<span class="pill risk">Design risk</span>';
     const corr = f.detail && f.detail.corrected ? '<div class="corr">Simulated with the units trap corrected</div>' : '';
     // power-up findings lead with what they mean, in plain words; the measured detail follows
-    const PLAIN = {'analog/no_startup': 'This circuit can wake up dead.', 'analog/two_states': 'This circuit can wake up in the wrong state.',
-      'analog/oscillates': 'This circuit never settles: it oscillates.', 'analog/unstable': 'This loop is unstable.',
-      'analog/low_phase_margin': 'This loop rings: its margins are thin.',
-      'analog/sequence_dependent': 'This circuit works only if the chip powers up in the right order.',
-      'analog/overstress': 'A 1.8 V transistor sees a 3.3 V voltage: it will wear out or break.',
-      'analog/weak_output': 'This output cannot drive the pad: what you measure depends on your meter.',
-      'layout/devices_differ': 'The layout builds other devices than the schematic: the chip is not the circuit you simulated, or the schematic is out of date.',
-      'layout/sizes_differ': 'The layout draws its devices at other sizes than the schematic.',
-      'layout/ports_differ': 'The same circuit as the schematic, but its ports are named or wired otherwise: check that every port is connected.',
-      'layout/dummies': 'The layout adds dummy devices (off, or driving nothing) that the schematic does not have.',
-      'layout/ideal_parts': 'The schematic simulates ideal parts (a capacitor written as its value, an R with no model) that the layout cannot draw.',
-      'layout/bodies_untied': 'The layout leaves transistor bodies (an n-well, the substrate) on a net of their own; tied as the schematic ties them, the circuit matches.',
-      'layout/split_pin': 'A pin is drawn in pieces that are not connected to each other: only what joins them above makes them one net.'};
     const plain = PLAIN[f.rule] ? `<div class="plain">${PLAIN[f.rule]}</div>` : '';
     const st = (f.detail && f.detail.states) || [];
     const states = f.rule === 'analog/two_states' && st.length === 2 ? `<div class="states num">${st.map((x, i) =>
       `<span><i>${i ? 'after power-up' : 'DC analysis'}</i>${(x.v != null ? x.v.toFixed(3) + ' V · ' : '')}${(x.i * 1e6).toFixed(1)} µA</span>`).join('')}</div>` : '';
     const by = f.detail && f.detail.planner === 'muse' ? '<div class="by">Test written by Muse Spark · run by the engine</div>' : '';
     const simDev = (f.detail && f.detail.device) || '', dv = simDev.split('.').length > 2 ? simDev.split('.').slice(1).join('.') : (f.device || '');
-    d.innerHTML = `<div class="h">${pill}<span class="dv">${esc(dv)}</span></div>${plain}${states}<div class="tt">${esc(f.title)}</div>${by}${corr}<div class="loc">${esc(f.location)}</div><div class="fx">${fixHtml(f)}</div>${evHtml(f)}`;
-    d.onclick = e => { if (e.target.closest('.evdl')) return; const b = e.target.closest('[data-fix]'); if (b) { e.stopPropagation(); askFix(b.dataset.fix); return } if (e.target.closest('details')) return; select(f, d) };
+    d.innerHTML = `<div class="h">${pill}<span class="dv">${esc(dv)}</span></div>${plain}${states}<div class="tt">${esc(f.title)}</div>${by}${corr}<div class="loc">${esc(f.location)}</div><div class="fx">${fixHtml(f)}</div>${evHtml(f)}<div class="walkrow"><button class="btn walk" type="button" data-walk>Walk me through it</button><a class="chiplink" href="${location.pathname.replace(/\/$/, '')}/chip?f=${f.id}">See it on the chip</a></div>`;
+    d.onclick = e => { if (e.target.closest('.evdl, .chiplink')) return; if (e.target.closest('[data-walk]')) { e.stopPropagation(); walk(f); return } const b = e.target.closest('[data-fix]'); if (b) { e.stopPropagation(); askFix(b.dataset.fix); return } if (e.target.closest('details')) return; select(f, d) };
     d.onkeydown = e => { if (e.key === 'Enter') select(f, d) };
-    cards[f.id] = {el: d, key: JSON.stringify(f.fix || null)};
+    cards[f.id] = {el: d, key: JSON.stringify(f.fix || null), f};
+    if (filt && !famOf(filt[0], f.rule)) d.hidden = true;
     flist.appendChild(d); if (G) G.from(d, {y: 8, opacity: 0, duration: 0.4, ease: 'power2.out'});
   };
   const updateCard = f => {
@@ -360,7 +402,10 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     if (first) { wavePlot(k, first); const b = g.querySelector(`[data-k="${CSS.escape(first.case + '#' + first.corner + '|' + first.temp + '|' + first.vscale)}"]`); b && b.classList.add('sel') }
   };
   const showEvidence = f => {
-    const k = f.detail && f.detail.k, pr = k != null && (lastLive.plan_results || [])[k];
+    const lp = f.detail && f.detail.loop, k = f.detail && f.detail.k;
+    // a testbench loop carries its own results; shown as a stability test cut where the engine cut it
+    const pr = lp ? {plan: {kind: 'stability', cell: f.detail.testbench, break: {net: lp.net}}, results: f.detail.results || []}
+      : k != null && (lastLive.plan_results || [])[k];
     if (!pr) { evid.hidden = true; $('.pvt').hidden = false; return }
     evid.hidden = false; $('.pvt').hidden = true;
     const rows = (pr.results || []).filter(r => !r.error);
@@ -390,7 +435,9 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   const select = async (f, el) => {
     showEvidence(f);
     const at = whereIs(f.detail && f.detail.device), cell = f.detail && f.detail.plan && f.detail.plan.cell;
-    if (cell && /\.sch$/.test(cell)) await openSheet('', '', cell);          // a planned test: show the cell it tested
+    const lp = f.detail && f.detail.loop;
+    if (lp && f.detail.testbench) { await openSheet('', '', f.detail.testbench); f = Object.assign({}, f, {device: lp.inst}) }   // a testbench loop
+    else if (cell && /\.sch$/.test(cell)) await openSheet('', '', cell);     // a planned test: show the cell it tested
     else if (at) { if (await openSheet(at.path, at.leaf)) f = Object.assign({}, f, {device: at.leaf}) } else toTop();
     flist.querySelectorAll('.card.sel').forEach(c => c.classList.remove('sel')); el.classList.add('sel');
     svg && svg.querySelectorAll('.dev.sel').forEach(g => g.classList.remove('sel'));
@@ -398,7 +445,10 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     // every condition where this finding fails, not only the worst one
     const key = (f.detail && f.detail.device) || f.device || '';
     let n = 0;
-    for (const c of lastCells) {
+    // a PVT finding carries the conditions where it fails (whatever the rule); older runs fall back to the triode list
+    const own = f.detail && Array.isArray(f.detail.conds) && f.detail.k == null && !f.detail.loop ? f.detail.conds : null;
+    if (own) own.forEach(c => { const el2 = cellEls[`${c[0]}|${c[1]}|${c[2]}`]; if (el2) { el2.classList.add('fail-hit'); n++ } });
+    else for (const c of lastCells) {
       const hitc = (c.devices || []).some(d => d === key || d.startsWith(key + ' '));
       if (hitc) { const el2 = cellEls[`${c.corner}|${c.temp}|${c.vscale}`]; if (el2) { el2.classList.add('fail-hit'); n++ } }
     }
@@ -412,6 +462,33 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       if (G) G.fromTo(g, {opacity: 0.2}, {opacity: 1, duration: 0.3, repeat: 2, yoyo: true}) }   // odd play count: ends lit
     const w = f.detail && f.detail.worst; if (w) { const c = cellEls[`${w[0]}|${w[1]}|${w[2]}`]; c && c.classList.add('hit') }
   };
+
+  // ---------- walk-through: the finding explained on the bench, step by step (tour.js) ----------
+  const wait = ms => new Promise(r => setTimeout(r, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ms));
+  const union = els => { const rs = els.filter(Boolean).map(e => e.getBoundingClientRect()).filter(r => r.width || r.height);
+    if (!rs.length) return null; const l = Math.min(...rs.map(r => r.left)), t = Math.min(...rs.map(r => r.top));
+    return {left: l, top: t, width: Math.max(...rs.map(r => r.right)) - l, height: Math.max(...rs.map(r => r.bottom)) - t} };
+  let walking = null;
+  const tour = window.KaavalTour && new KaavalTour.Tour({
+    show: async (f, st) => {
+      const c = cards[f.id] && cards[f.id].el, t = st.target;
+      if (walking !== f.id) { walking = f.id; tab('f'); await select(f, c); await wait(450) }
+      if (t.kind === 'card') { c.scrollIntoView({block: 'nearest'}); return c.getBoundingClientRect() }
+      if (t.kind === 'device' || t.kind === 'sheet') {
+        await select(f, c); evid.hidden = true; $('.pvt').hidden = false;   // the canvas and grid, for the device
+        await wait(500);
+        const g = t.device && devEl(t.device);
+        return g ? g.getBoundingClientRect() : cv.getBoundingClientRect() }
+      if (t.kind === 'cells') { evid.hidden = true; $('.pvt').hidden = false;
+        const hit = [...document.querySelectorAll('#matrix .fail-hit, #matrix .hit')];
+        return union(hit.length ? hit : [$('#matrix')]) }
+      if (t.kind === 'evidence-grid' || t.kind === 'evidence-plot') { showEvidence(f); await wait(300);
+        return (t.kind === 'evidence-grid' ? $('#ev-lat') : $('.ev-plot')).getBoundingClientRect() }
+      if (t.kind === 'actions') { c.scrollIntoView({block: 'nearest'});
+        return union([c.querySelector('[data-fix]'), c.querySelector('.fixres'), c.querySelector('.evdl')]) || c.getBoundingClientRect() }
+      return null },
+    done: () => { walking = null } });
+  const walk = f => tour && tour.start(f, PLAIN[f.rule]);
 
   // ---------- title block: what was reviewed, and the verdict once the review ends ----------
   const setTb = (j, lv, r) => {
@@ -433,7 +510,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   };
 
   // ---------- poll ----------
-  let svgLoaded = false, lastCells = [];
+  let svgLoaded = false, lastCells = [], linked = false;
   const tick = async () => {
     const j = await (await fetch(`/api/runs/${RID}?after=${after}`)).json();
     const r = j.run, lv = j.live || {}; lastLive = lv;
@@ -461,6 +538,10 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
       say(`<span class="ts">${new Date(e.ts * 1000).toTimeString().slice(0, 8)}</span>${esc(e.msg)}`, e.level === 'info' ? '' : e.level) }
     j.findings.forEach(f => byId[f.id] = f);
     for (const f of j.findings) { if (!shown.has(f.id)) { shown.add(f.id); card(f) } else updateCard(f) }
+    // a link from the chip view (?f=<id>, &walk=1) opens that finding here, and its walk-through if asked
+    if (!linked && (r.status === 'done' || r.status === 'error')) { linked = true;
+      const q = new URLSearchParams(location.search), want = j.findings.find(f => String(f.id) === q.get('f'));
+      if (want) { tab('f'); if (q.get('walk')) setTimeout(() => walk(want), 600); else select(want, cards[want.id].el) } }
     renderFams(j.findings, lv);
     $('#tab-fn').textContent = j.findings.filter(f => f.kind !== 'note').length + (j.findings.some(f => f.kind === 'note') ? ' + ' + j.findings.filter(f => f.kind === 'note').length : '');
     if (!switched && (r.status === 'done' || r.status === 'error')) { switched = true; if (j.findings.length) tab('f') }

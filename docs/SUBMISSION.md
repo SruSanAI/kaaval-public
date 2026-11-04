@@ -116,10 +116,14 @@ Pre-existing and declared: Minnal, our private analog designer. Kaaval runs stan
 
 ## Where Muse Spark is load-bearing
 
-- Reading a repo's docs, schematics and schematic images into blocks, risks and pin roles. A rules baseline cannot
-  place a stability cut, because that needs an understanding of the topology.
-- Choosing the power-up sequences and chip-context tests per block.
-- Explaining each proven finding in the designer's terms.
+- Reading a repo's docs, schematics and schematic images into blocks, risks and pin roles (preflight with the real
+  key, 4 Nov: it counts a bandgap's 8 transistors from its schematic image, matching our netlist, and names the
+  block "1:29 PNP PTAT generator, leakage-only startup"). Without a model, stability is measured only where the
+  designer's own testbench closes a loop; anywhere else the cut needs the topology understood, which is Muse's plan.
+- Choosing the power-up sequences and chip-context tests per block (all 5 of its plans on a 23-cell design valid,
+  including 2 stability cuts it placed), with high reasoning effort.
+- Answering the designer's questions from the review's own findings, citing them (live: a ring-oscillator review
+  answered in 16 s, every number taken from the review).
 
 The no-model baseline is labelled as such in the UI.
 

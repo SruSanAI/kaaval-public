@@ -55,6 +55,10 @@ not foundry sign-off**; one measured run is not a guarantee.
    as **not run**. On a 161-device flash ADC the full review takes 610 s instead of 1,968 s with the same findings,
    and 72 of its 165 power-up conditions are then not tested (`KAAVAL_PLAN_BUDGET` raises the budget; 0 removes it).
 4. **Fix.** A proposal, never a merge: a sizing fix is re-simulated at all 45 conditions before it is shown.
+5. **Explain.** On the bench, **Walk me through it** rings the failing device on its sheet, lights the conditions
+   where it fails and opens the waveform or Bode plot; **Ask** sends a question to Muse Spark, which answers only
+   from the review's own findings and measurements and cites them. **Layout 3D** shows the committed layout as
+   stacked sky130 layers (orbit, explode, toggle a layer), read from the `.mag` files as text.
 
 The review page shows the evidence behind each finding: the failing device on its own schematic sheet, the
 conditions where it fails, a **sequence matrix** (every power-up order against every condition, click a cell for its

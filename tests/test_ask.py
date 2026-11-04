@@ -27,6 +27,12 @@ def test_ask_answers_from_the_review():
         assert f"id {fid}: analog/low_phase_margin" in text and '"worst": ["sf", -40, 1.1]' in text and "why does it ring?" in text
         assert seen[0][1]["name"] == "kaaval_answer"
         assert c.post(f"/api/runs/{rid}/ask", json={"q": ""}).status_code == 400
+        server.ACCESS = "secret"                                                              # a public server
+        assert c.post(f"/api/runs/{rid}/ask", json={"q": "why?"}).status_code == 403
+        assert c.post(f"/api/runs/{rid}/ask", json={"q": "why?"}, headers={"X-Kaaval-Code": "secret"}).status_code == 200
+        server.ACCESS, server.ASK_PER_HOUR = "", 0
+        assert c.post(f"/api/runs/{rid}/ask", json={"q": "why?"}).status_code == 429             # per-address limit
+        server.ASK_PER_HOUR = 30
         os.environ.pop("MUSE_API_KEY")
         assert c.post(f"/api/runs/{rid}/ask", json={"q": "why?"}).status_code == 503
     finally:

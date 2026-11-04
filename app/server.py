@@ -217,6 +217,27 @@ def review_text(rid, lv):
     return dict(text="\n".join(out)[:60000], ids=[str(f.get("id")) for f in fs])
 
 
+ASK_PER_HOUR = int(os.environ.get("KAAVAL_ASKS_PER_HOUR", "30"))
+_asks = {}
+
+
+def _ask_gate():
+    """None when this request may ask Muse Spark a question, else (message, status): the access code a review needs,
+    and at most ASK_PER_HOUR questions an hour from one address."""
+    if ACCESS:
+        code = request.headers.get("X-Kaaval-Code") or (request.get_json(silent=True) or {}).get("code", "")
+        if not hmac.compare_digest(str(code), ACCESS):
+            return "This Kaaval needs its access code to ask Muse Spark.", 403
+    ip = request.headers.get("CF-Connecting-IP") or request.remote_addr or "?"
+    now = time.time()
+    with _starts_lock:
+        recent = [t for t in _asks.get(ip, []) if now - t < 3600]
+        if len(recent) >= ASK_PER_HOUR:
+            return f"At most {ASK_PER_HOUR} questions an hour from one address; try again later.", 429
+        _asks[ip] = recent + [now]
+    return None
+
+
 @app.post("/api/runs/<rid>/ask")
 def api_ask(rid):
     """A question about a finished review, answered by Muse Spark from the review's own findings and tests."""
@@ -225,6 +246,9 @@ def api_ask(rid):
         abort(404)
     if not planner.configured("muse"):
         return jsonify(ok=False, error="Muse Spark is not connected on this server"), 503
+    g = _ask_gate()                                    # each question is a paid model call: same code as a review
+    if g:
+        return jsonify(ok=False, error=g[0]), g[1]
     if (store.run(rid) or {}).get("status") not in ("done", "error"):
         return jsonify(ok=False, error="ask once the review has finished"), 409
     q = str((request.get_json(silent=True) or {}).get("q", "")).strip()

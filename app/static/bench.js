@@ -202,7 +202,8 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     const wait = document.createElement('div'); wait.className = 'msg a'; wait.innerHTML = '<span class="spin s"></span>Muse Spark is reading the review…';
     feed.appendChild(wait); wait.scrollIntoView({block: 'end'});
     try {
-      const r = await fetch(`/api/runs/${RID}/ask`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({q})});
+      let code = ''; try { code = sessionStorage.getItem('kv-code') || '' } catch (e2) {}   // the code the intake page asked for
+      const r = await fetch(`/api/runs/${RID}/ask`, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Kaaval-Code': code}, body: JSON.stringify({q})});
       const j = await r.json();
       if (!j.ok) { wait.innerHTML = `<span class="ts">Muse Spark</span>${esc(j.error || 'no answer')}`; return }
       const chips = (j.cites || []).map(id => { const f = byId[id]; return f ? `<span class="cite"><button type="button" data-open="${id}">${esc(f.rule.split('/').pop())}</button>` +

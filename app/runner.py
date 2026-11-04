@@ -535,7 +535,7 @@ def review(rid, src, root=None):
                         store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"],
                                                     kind="note" if f["severity"] == "info" else "risk",
                                                     title=f["message"][:220], location=f"{rel} · {f['device']}",
-                                                    device="", detail=dict(f, corrected=bool(fixed))))
+                                                    device="", detail=dict(f, corrected=bool(lv.get("corrected")))))
                     lv.set(spread=an.get("spread", {}))
                     for k, sp in an.get("spread", {}).items():
                         store.event(rid, "pvt", (f"{k}: {sp['lo'] / 1e6:.3g}–{sp['hi'] / 1e6:.3g} MHz across PVT "
@@ -606,7 +606,7 @@ def review(rid, src, root=None):
                     store.add_finding(rid, dict(rule=f["rule"], severity=f["severity"], kind="risk",
                                                 title=f["message"][:180], location=f"{rel} · {f['device']}",
                                                 device=map_device(f["device"], inst) or "",
-                                                detail=dict(f, corrected=bool(fixed))))
+                                                detail=dict(f, corrected=bool(lv.get("corrected")))))
                 n_fail = len(an.get("failed", []))
                 lv.stage("pvt", "done", f"{45 - n_fail} / 45 simulated · {len(an['findings'])} finding(s)")
                 store.event(rid, "pvt", f"Swept 45 conditions ({45 - n_fail} simulated): {len(an['findings'])} "

@@ -12,7 +12,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
     const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     root.dataset.theme = dark ? 'light' : 'dark'; try { localStorage.setItem('kv-theme', root.dataset.theme) } catch (e) {}
   };
-  fetch('/api/minnal').then(r => r.json()).then(m => { museOn = !!m.muse;
+  fetch('/api/minnal').then(r => r.json()).then(m => { museOn = !!m.muse; minnalOn = !!m.minnal;
     if (museOn) { $('#who-st').textContent = 'checks proven in ngspice · Muse Spark connected'; $('#ask').placeholder = 'Ask Muse Spark about this review…';
       $('#ask').disabled = false; const n = document.querySelector('.composer .note');
       if (n) n.textContent = 'Muse Spark answers from this review\'s own findings, even while it runs. Every number above comes from a simulation.' }
@@ -236,7 +236,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   // ---------- right: reviewer feed ----------
   const feed = $('#feed'), flist = $('#flist'); const shown = new Set(); let after = 0;
   // ---------- ask: a question about the finished review, answered by Muse Spark from the review's own findings ----------
-  let museOn = false, asking = false; const byId = {};
+  let museOn = false, minnalOn = false, asking = false; const byId = {};
   const askBox = $('#ask');
   const askQ = async () => {
     const q = askBox.value.trim(); if (!q || asking) return;
@@ -269,6 +269,7 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   const fixHtml = f => {
     const x = f.fix;
     if (f.kind !== 'risk' || !/^analog\/headroom/.test(f.rule)) return '';   // the sizing search answers headroom findings
+    if (!x && !minnalOn) return '';                                          // the sizing search runs on Minnal: offered only when it is connected
     if (!x) return `<button class="btn fixbtn" type="button" data-fix="${f.id}">${ICON.fix.replace('class="ic"', '')}Try a sizing fix</button>`;
     if (x.state === 'running') return '<div class="fixres run"><span class="spin s"></span>Sizing: widening the matched group ×1.25 to ×8, each candidate re-simulated where it failed…</div>';
     if (x.state === 'error') return `<div class="fixres bad">Could not size: ${esc(x.why || '')}</div>`;

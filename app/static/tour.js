@@ -93,7 +93,8 @@
   };
   Tour.prototype.close = function () { this.play(false); this.el.hidden = true; document.body.classList.remove('touring'); this.h.done && this.h.done() };
   Tour.prototype.play = function (on) {
-    clearInterval(this.auto); this.auto = on ? setInterval(() => this.i < this.s.length - 1 ? this.go(this.i + 1) : this.play(false), 5200) : null;
+    clearInterval(this.auto);
+    if (on && this.i >= this.s.length - 1) this.go(0);     // Play on the last step plays it again from the start this.auto = on ? setInterval(() => this.i < this.s.length - 1 ? this.go(this.i + 1) : this.play(false), 5200) : null;
     const b = this.el.querySelector('[data-t="auto"]'); b.textContent = on ? 'Pause' : 'Play'; b.setAttribute('aria-pressed', !!on);
   };
   Tour.prototype.go = async function (i) {

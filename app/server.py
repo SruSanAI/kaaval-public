@@ -478,6 +478,9 @@ def api_fix(rid, fid):
         abort(404)
     if (f.get("fix") or {}).get("state") == "running":
         return jsonify(ok=True)
+    g = _ask_gate()                                    # a fix is several paid model calls: the same limits as a question
+    if g:
+        return jsonify(ok=False, error=g[0]), g[1]
     threading.Thread(target=runner.try_fix, args=(rid, fid), daemon=True).start()
     return jsonify(ok=True)
 

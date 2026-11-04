@@ -265,8 +265,22 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   const say = (html, cls = '') => { const d = document.createElement('div'); d.className = 'msg ' + cls; d.innerHTML = html; feed.appendChild(d);
     if (G) G.from(d, {y: 6, opacity: 0, duration: 0.35, ease: 'power2.out'}); d.scrollIntoView({block: 'end'}) };
   const cards = {};
+  const STARTUP = /^analog\/(no_startup|two_states|marginal_startup)$/;
+  const startupHtml = f => {                     // a block that can wake up dead: Muse Spark designs its start-up circuit
+    const x = f.fix;
+    if (!x) return museOn ? `<button class="btn fixbtn" type="button" data-fix="${f.id}">${ICON.fix.replace('class="ic"', '')}Ask Muse Spark to design a start-up circuit</button>` : '';
+    if (x.state === 'running') return '<div class="fixres run"><span class="spin s"></span>Muse Spark is designing a start-up circuit; each design is powered up from 0 V at all 45 conditions…</div>';
+    if (x.state === 'error') return `<div class="fixres bad">Could not design one: ${esc(x.why || '')}</div>`;
+    const devs = d => (d || []).map(l => `<div class="mono sp">${esc(l)}</div>`).join('');
+    if (x.verified) return `<div class="fixres good">${ICON.ok}<div><b>Verified start-up circuit, designed by Muse Spark.</b> Powered up from 0 V it now starts at all ${x.n_conditions} conditions`
+      + (x.bias_shift != null ? `, working current within ${(x.bias_shift * 100).toFixed(1)} % of the original` : '') + ` (round ${x.rounds.length}).`
+      + `${devs(x.devices)}<div class="why">${esc(x.why || '')}</div><details><summary>The cell with it, as simulated (SPICE)</summary><pre class="mono">${esc(x.spice || '')}</pre></details></div></div>`;
+    return `<div class="fixres meh"><div><b>No verified start-up circuit.</b> ${esc(x.why || '')}</div><details><summary>${(x.rounds || []).length} design(s) by Muse Spark</summary>`
+      + (x.rounds || []).map(r => `${devs(r.devices)}<div class="mono">${esc(r.result.why || (r.result.bad || []).join(' | ') || (r.result.shift != null ? `working current moved ${(r.result.shift * 100).toFixed(0)} %` : ''))}</div>`).join('') + '</details></div>';
+  };
   const fixHtml = f => {
     const x = f.fix;
+    if (f.kind === 'risk' && STARTUP.test(f.rule) && f.detail && f.detail.k != null) return startupHtml(f);
     if (f.kind !== 'risk' || !/^analog\/headroom/.test(f.rule)) return '';   // the sizing search answers headroom findings
     if (!x && !museOn) return '';                                            // Muse Spark proposes the sizes: offered when it is connected
     if (!x) return `<button class="btn fixbtn" type="button" data-fix="${f.id}">${ICON.fix.replace('class="ic"', '')}Ask Muse Spark for a sizing fix</button>`;
@@ -327,7 +341,9 @@ try { document.getElementById('l3d').href = location.pathname.replace(/\/$/, '')
   };
   let polling = true;
   const askFix = async fid => {
-    await fetch(`/api/runs/${RID}/findings/${fid}/fix`, {method: 'POST'});
+    let code = ''; try { code = sessionStorage.getItem('kv-code') || '' } catch (e) {}
+    const r = await fetch(`/api/runs/${RID}/findings/${fid}/fix`, {method: 'POST', headers: {'X-Kaaval-Code': code}});
+    if (!r.ok) { const j = await r.json().catch(() => ({})); say(`<span class="ts">fix</span>${esc(j.error || 'the fix could not start')}`, 'warn'); return }
     if (!polling) { polling = true; tick() }
   };
   // ---------- evidence: what the selected finding's test actually measured ----------

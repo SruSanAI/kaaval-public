@@ -10,7 +10,7 @@ designer's own schematic names, and that schematic as SVG.
 """
 import itertools, os, re, shutil, subprocess, threading, time
 
-from app import engine, inputs, planner, sizing, store
+from app import engine, inputs, planner, sizing, startup, store
 from guard import sch_svg
 from kaaval_engine import extract, layout_check, netlist, postlayout, sim
 from kaaval_engine import plan as kplan
@@ -650,8 +650,10 @@ def review(rid, src, root=None):
 
         try:                                  # the same tests on the layout as drawn, with its capacitance
             post_layout(rid, lv, root, files, lay)
-        except (engine.EngineError, OSError) as e:
-            store.event(rid, "muse", f"The post-layout comparison did not complete: {e}", "warn")
+        except Exception as e:                # an optional comparison: it never ends the review
+            import traceback
+            traceback.print_exc()
+            store.event(rid, "muse", f"The post-layout comparison did not complete ({type(e).__name__}: {e})", "warn")
 
         lv.stage("review", "running")
         n = len(store.findings(rid))
@@ -670,16 +672,30 @@ def review(rid, src, root=None):
 
 
 def try_fix(rid, fid):
-    """A sizing fix for one headroom finding: Muse Spark proposes sizes, the engine proves them at all 45 conditions
-    (app/sizing.py); the outcome is attached to the finding."""
+    """A fix for one finding, designed by Muse Spark and proven by the engine at all 45 conditions: new sizes for a
+    headroom finding (app/sizing.py), a start-up circuit for a block that can wake up dead (app/startup.py). The
+    outcome is attached to the finding."""
     f = store.finding(rid, fid)
     lv = store.live(rid)
-    if not f or not lv.get("ws") or not f["rule"].startswith("analog/headroom"):
+    if not f or not lv:
+        return
+    log = lambda msg, level="info": store.event(rid, "fix", msg, level)
+    d = f.get("detail") or {}
+    if f["rule"] in startup.RULES and d.get("k") is not None and d["k"] < len(lv.get("plan_results") or []):
+        store.update_finding(rid, fid, fix={"state": "running", "kind": "startup"})
+        try:
+            files = design_files(os.path.join(WORK, rid))
+            r = startup.fix(files, engine.upload(files), dict(d, title=f["title"]), lv["plan_results"][d["k"]], log=log)
+            store.update_finding(rid, fid, fix=dict(r, state="done"))
+        except Exception as e:
+            store.update_finding(rid, fid, fix={"state": "error", "kind": "startup", "why": str(e)})
+        return
+    if not lv.get("ws") or not f["rule"].startswith("analog/headroom"):
         return
     store.update_finding(rid, fid, fix={"state": "running"})
     try:
         r = sizing.fix(design_files(os.path.join(WORK, rid)), lv["testbench"], dict(f["detail"], title=f["title"]),
-                       bool(lv.get("corrected")), log=lambda msg, level="info": store.event(rid, "fix", msg, level))
+                       bool(lv.get("corrected")), log=log)
         store.update_finding(rid, fid, fix=dict(r, state="done"))
     except Exception as e:
         store.update_finding(rid, fid, fix={"state": "error", "why": str(e)})

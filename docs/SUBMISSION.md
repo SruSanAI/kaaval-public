@@ -98,7 +98,7 @@ Kaaval takes a repository, rebuilds every circuit from its schematics as text (n
   change (no clean held-out set exists yet: TT09's chip pages carry no silicon feedback), 2 of 4 in-scope failures
   are flagged by their rule and 1 of 14 working chips has a design-risk finding. Scope labels are the Kaaval author's reading of each outcome, not the designers'; with 7 in scope, one
   chip moves a rate by 14 points, so no percentage is given.
-- **FILL** Muse arm vs rules arm (held-out ablation; pin roles, where the rules arm scores 143/189 = 76 %).
+- Muse arm vs rules arm, measured 4 Nov. **Held-out seeded bugs (10 designs, 6 planted start-up bugs):** designer's testbenches alone 0/6; brute-force rules 4/6 with 3 false alarms; Muse Spark 3/6 with **0 false alarms**. Muse does not find more of these bugs than brute force; it finds them without crying wolf. **Pin roles (189 ports):** rules 143/189 (76 %), Muse Spark 173/189 (92 %), every supply, ground, enable and reset right (80/80). The answer key was drafted by an AI from circuit evidence and has not been checked by an engineer yet.
 
 - In a project's own CI: `tools/kaaval_check.py` runs the same review on a checkout (findings, JSON, SARIF, exit
   code 1 on a design-risk warning) and `action.yml` makes it a GitHub Action whose findings show on the pull
@@ -146,7 +146,7 @@ are shown.
 ## Checklist
 
 - [ ] Muse preflight passes (docs/MUSE_READY.md, step 1)
-- [ ] FILL lines above filled or dropped
+- [x] FILL lines above filled or dropped
 - [ ] kaaval-public flipped to public (Sanjay)
 - [ ] Live product URL (docs/HOSTING.md)
 - [ ] Video recorded (real runs, 1×) and uploaded

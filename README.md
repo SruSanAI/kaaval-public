@@ -2,6 +2,9 @@
 
 # Kaaval
 
+> [!IMPORTANT]
+> **Not open source. All rights reserved.** This code is public so it can be read and evaluated. You may not use it for any other purpose, copy, modify, redistribute or host it, or train models on it, without written permission from Sanjay Sivakumar (sanjay@srusan.com). See [LICENSE](LICENSE).
+
 **Kaaval** (Tamil காவல், "guard") reviews open-silicon analog chip designs the way a senior analog engineer would.
 Paste a repository: Kaaval rebuilds every circuit from the schematics as text, **Muse Spark plans the tests the
 designer never ran** (power-up from 0 V, loop stability, corners, and the block **in its chip context**: which rail
@@ -263,4 +266,4 @@ by Sanjay Sivakumar · [github.com/SruSanCyborg](https://github.com/SruSanCyborg
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). Minnal is not included and is not under this licence.
+**All rights reserved. Source-available for viewing and evaluation only; not open source.** You may read the code and run it unmodified to evaluate it. Using it for anything else, copying, modifying, redistributing, hosting it as a service or training models on it needs written permission first (sanjay@srusan.com). See [LICENSE](LICENSE). Minnal is not included and is not under this licence.

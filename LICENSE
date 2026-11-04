@@ -1,21 +1,27 @@
-MIT License
+Kaaval: Source-Available, View-Only Licence
 
-Copyright (c) 2026 Sanjay Sivakumar
+Copyright (c) 2026 Sanjay Sivakumar. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This repository is published so that it can be read and evaluated. It is NOT open source.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. What you may do. You may view and read the source code on GitHub, and you may run it unmodified on your own
+   machine solely to evaluate it (including judging it in the Meta Global AI Developer Hackathon).
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. What you may not do without prior written permission from the copyright holder:
+   (a) use it, or any part of it, for any other purpose, including commercial, research, internal or production use;
+   (b) copy, modify, translate, adapt or create derivative works of it;
+   (c) distribute, publish, sublicense, sell, rent or host it, or offer it as a service;
+   (d) use it, its outputs or its documentation to train, fine-tune or evaluate machine-learning models;
+   (e) remove or change this notice.
+   Forking on GitHub is allowed only as far as GitHub's Terms of Service require for viewing; a fork grants no rights.
+
+3. No other rights. No licence is granted under any patent, trademark or other intellectual property right, by
+   implication, estoppel or otherwise. All rights not expressly granted here are reserved.
+
+4. Third-party parts. Files or tools from others (the sky130 PDK, ngspice, xschem, Magic, Netgen and any other
+   third-party material) stay under their own licences. Minnal is not included and is not under this licence.
+
+5. No warranty. The software is provided "as is", without warranty of any kind. In no event shall the copyright holder
+   be liable for any claim, damages or other liability arising from it or its use.
+
+Permission requests: sanjay@srusan.com

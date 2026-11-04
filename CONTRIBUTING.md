@@ -28,5 +28,5 @@ for t in tests/test_*.py; do python "$t" || break; done
 
 One topic per PR, with what changed and why. CI must be green.
 
-By contributing you agree that your work is released under the [MIT License](LICENSE), and to follow the
+Kaaval is not open source (see [LICENSE](LICENSE)); please open an issue before any pull request. By contributing you assign your contribution to the copyright holder and agree to its use under the project's licence, and to follow the
 [Code of Conduct](CODE_OF_CONDUCT.md).
